@@ -9,6 +9,7 @@ import LoginApp from './screens/LoginApp';
 import SignUpApp from './screens/SignUpApp';
 import ChatScreen from './screens/ChatScreen';
 import ForgotPassword from './screens/ForgotPassword';
+import 'react-native-gesture-handler';
 
 const Stack = createStackNavigator();
 

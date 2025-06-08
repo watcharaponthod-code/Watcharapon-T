@@ -1648,6 +1648,8 @@ const sentences = {
 
   
 };
+// เพิ่มตัวแปรเก็บประวัติประโยคที่ใช้แล้ว
+let usedSentences = {};
 
 const getRandomSentence = (category, difficulty) => {
   try {
@@ -1657,8 +1659,30 @@ const getRandomSentence = (category, difficulty) => {
     const difficultyLevelSentences = categorySentences[difficulty];
     if (!difficultyLevelSentences) return null;
 
-    const randomIndex = Math.floor(Math.random() * difficultyLevelSentences.length);
-    return difficultyLevelSentences[randomIndex];
+    // สร้าง key สำหรับเก็บประวัติ
+    const historyKey = `${category}-${difficulty}`;
+
+    // ถ้ายังไม่มีประวัติสำหรับ category และ difficulty นี้ ให้สร้างใหม่
+    if (!usedSentences[historyKey]) {
+      usedSentences[historyKey] = new Set();
+    }
+
+    // ถ้าใช้ครบทุกประโยคแล้ว ให้ล้างประวัติ
+    if (usedSentences[historyKey].size >= difficultyLevelSentences.length) {
+      usedSentences[historyKey].clear();
+    }
+
+    // สุ่มประโยคจนกว่าจะได้ประโยคที่ยังไม่เคยใช้
+    let randomSentence;
+    do {
+      const randomIndex = Math.floor(Math.random() * difficultyLevelSentences.length);
+      randomSentence = difficultyLevelSentences[randomIndex];
+    } while (usedSentences[historyKey].has(randomSentence));
+
+    // เพิ่มประโยคที่ถูกใช้ลงในประวัติ
+    usedSentences[historyKey].add(randomSentence);
+
+    return randomSentence;
   } catch (error) {
     console.error('Error getting random sentence:', error);
     return null;

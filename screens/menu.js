@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Animated } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Animated, Platform, Easing } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NavigationContainer } from '@react-navigation/native';
@@ -8,43 +8,209 @@ import TranslationGame from './game/Translation';
 import MatchGame from './game/Match';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import * as Animatable from 'react-native-animatable';
 import Rank from './game/Rank';
-import Scoreboard from './game/Scoreboard'; // Add this import
+import Scoreboard from './game/Scoreboard';
 
 const { width } = Dimensions.get('window');
 const cardWidth = width * 0.9;
 
-function GameCard({ icon, title, description, onPress, colors, iconType }) {
-  const scaleValue = new Animated.Value(1);
-  const darkenValue = new Animated.Value(0);
+// Create an enhanced spring animation for cards with a more pronounced bounce
+const BouncyCard = ({ children, index }) => {
+  const translateY = useRef(new Animated.Value(80)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.5)).current;
+  
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(index * 150),
+      Animated.parallel([
+        Animated.spring(translateY, {
+          toValue: 0,
+          tension: 40,    // Lower tension for more bounce
+          friction: 25,    // Lower friction for more oscillation
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.exp),
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          tension: 50,    // Lower tension 
+          friction: 2,    // Lower friction for more bouncy effect
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, []);
+  
+  return (
+    <Animated.View
+      style={{
+        opacity,
+        transform: [
+          { translateY },
+          { scale }
+        ]
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
 
-  const onPressIn = () => {
-    Animated.parallel([
-      Animated.spring(scaleValue, {
-        toValue: 0.95,
+// Pop-up button with more dramatic effect
+const PopButton = ({ children, delay = 0 }) => {
+  const translateY = useRef(new Animated.Value(-30)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.3)).current;
+  
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.parallel([
+        Animated.spring(translateY, {
+          toValue: 0,
+          tension: 120,
+          friction: 4,     // Lower friction for more bounce
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          tension: 120,
+          friction: 5,     // Reduced friction for bouncy effect
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, []);
+  
+  return (
+    <Animated.View
+      style={{
+        opacity,
+        transform: [
+          { translateY },
+          { scale }
+        ]
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+
+// Pulse animation for an element
+const PulseView = ({ children, pulseDuration = 2000 }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  
+  useEffect(() => {
+    const pulse = Animated.sequence([
+      Animated.timing(pulseAnim, {
+        toValue: 1.05,
+        duration: pulseDuration / 2,
+        easing: Easing.inOut(Easing.ease),
         useNativeDriver: true,
       }),
-      Animated.timing(darkenValue, {
-        toValue: 0.2,
-        duration: 100,
-        useNativeDriver: false,
+      Animated.timing(pulseAnim, {
+        toValue: 1,
+        duration: pulseDuration / 2,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      })
+    ]);
+    
+    Animated.loop(pulse).start();
+  }, []);
+  
+  return (
+    <Animated.View
+      style={{
+        transform: [{ scale: pulseAnim }]
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+
+function GameCard({ icon, title, description, onPress, colors, iconType }) {
+  const scaleValue = useRef(new Animated.Value(1)).current;
+  const rotateValue = useRef(new Animated.Value(0)).current;
+  const iconScale = useRef(new Animated.Value(1)).current;
+  
+  const [isPressed, setIsPressed] = useState(false);
+  
+  const onPressIn = () => {
+    setIsPressed(true);
+    
+    Animated.parallel([
+      Animated.spring(scaleValue, {
+        toValue: 0.92,
+        tension: 80,
+        friction: 3,
+        useNativeDriver: true,
+      }),
+      Animated.spring(rotateValue, {
+        toValue: 1,
+        tension: 100,
+        friction: 10,
+        useNativeDriver: true,
+      }),
+      Animated.spring(iconScale, {
+        toValue: 0.85,
+        tension: 100,
+        friction: 4,
+        useNativeDriver: true,
       })
     ]).start();
   };
 
   const onPressOut = () => {
+    setIsPressed(false);
+    
     Animated.parallel([
       Animated.spring(scaleValue, {
         toValue: 1,
+        tension: 40,
+        friction: 2.5,    // Lower friction for more bounce - removed bounciness
         useNativeDriver: true,
       }),
-      Animated.timing(darkenValue, {
+      Animated.spring(rotateValue, {
         toValue: 0,
-        duration: 100,
-        useNativeDriver: false,
+        tension: 60,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.spring(iconScale, {
+        toValue: 1,
+        tension: 60,
+        friction: 2.5,    // Lower friction for more bounce - removed bounciness
+        useNativeDriver: true,
       })
     ]).start();
+  };
+
+  const rotate = rotateValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '-1deg']
+  });
+
+  const pressedStyle = isPressed ? {
+    elevation: Platform.OS === 'android' ? 6 : 0,
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+  } : {
+    elevation: Platform.OS === 'android' ? 16 : 0,
+    shadowOpacity: 0.44,
+    shadowRadius: 10.32,
   };
 
   return (
@@ -55,27 +221,40 @@ function GameCard({ icon, title, description, onPress, colors, iconType }) {
       activeOpacity={1}
     >
       <Animated.View style={[
-        { transform: [{ scale: scaleValue }] },
-        styles.cardContainer
+        styles.cardContainer,
+        pressedStyle,
+        {
+          transform: [
+            { scale: scaleValue },
+            { rotateZ: rotate }
+          ]
+        }
       ]}>
         <LinearGradient
           colors={colors}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.gameCard, styles.cardShadow]}
+          style={styles.gameCard}
         >
-          <Animated.View style={[StyleSheet.absoluteFill, {
-            backgroundColor: 'black',
-            opacity: darkenValue,
-            borderRadius: 25,
-          }]} />
-          <View style={styles.iconContainer}>
+          {isPressed && (
+            <View style={[StyleSheet.absoluteFill, {
+              backgroundColor: 'black',
+              opacity: 0.15,
+              borderRadius: 25,
+            }]} />
+          )}
+          <Animated.View style={[
+            styles.iconContainer,
+            {
+              transform: [{ scale: iconScale }]
+            }
+          ]}>
             {iconType === 'material' ? (
               <MaterialCommunityIcons name={icon} size={48} color="#FFFFFF" />
             ) : (
               <Ionicons name={icon} size={48} color="#FFFFFF" />
             )}
-          </View>
+          </Animated.View>
           <View style={styles.gameInfo}>
             <Text style={styles.gameTitle}>{title}</Text>
             <Text style={styles.gameDescription}>{description}</Text>
@@ -87,6 +266,17 @@ function GameCard({ icon, title, description, onPress, colors, iconType }) {
 }
 
 function GameMenuScreen({ navigation }) {
+  const headerFadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(headerFadeAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+      easing: Easing.out(Easing.cubic),
+    }).start();
+  }, []);
+
   const games = [
     {
       icon: "book-alphabet",
@@ -117,43 +307,48 @@ function GameMenuScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <View style={styles.header}>
-        
+      <Animated.View style={[styles.header, { opacity: headerFadeAnim }]}>
         <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={[styles.headerButton, styles.yellowButton]}
-            onPress={() => navigation.navigate('Rank')}
-          >
-            <MaterialCommunityIcons 
-              name="trophy" 
-              size={24} 
-              color="#8D493A" 
-            />
-            <Text style={styles.buttonText}>Rank</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.headerButton, styles.whiteButton]}
-            onPress={() => navigation.navigate('Scoreboard')}
-          >
-            <MaterialCommunityIcons 
-              name="history" 
-              size={24} 
-              color="#8D493A" 
-            />
-            <Text style={styles.buttonText}>Scorebord</Text>
-          </TouchableOpacity>
+          <PopButton delay={200}>
+            <TouchableOpacity
+              style={[styles.headerButton, styles.yellowButton]}
+              onPress={() => navigation.navigate('Rank')}
+            >
+              <PulseView pulseDuration={3000}>
+                <MaterialCommunityIcons 
+                  name="trophy" 
+                  size={24} 
+                  color="#8D493A" 
+                />
+              </PulseView>
+              <Text style={styles.buttonText}>Rank</Text>
+            </TouchableOpacity>
+          </PopButton>
+          <PopButton delay={350}>
+            <TouchableOpacity
+              style={[styles.headerButton, styles.whiteButton]}
+              onPress={() => navigation.navigate('Scoreboard')}
+            >
+              <MaterialCommunityIcons 
+                name="history" 
+                size={24} 
+                color="#8D493A" 
+              />
+              <Text style={styles.buttonText}>Scoreboard</Text>
+            </TouchableOpacity>
+          </PopButton>
         </View>
-      </View>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      </Animated.View>
+      
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
         {games.map((game, index) => (
-          <Animatable.View
-            key={index}
-            animation="fadeInUp"
-            delay={index * 200}
-            duration={800}
-          >
+          <BouncyCard key={index} index={index}>
             <GameCard {...game} onPress={() => navigation.navigate(game.navigate)} />
-          </Animatable.View>
+          </BouncyCard>
         ))}
       </ScrollView>
     </View>
@@ -190,7 +385,7 @@ function AppNavigator() {
             </TouchableOpacity>
           )
         ),
-        headerRight: null, // Remove header right button
+        headerRight: null,
       })}
     >
       <Stack.Screen name="GameMenu" component={GameMenuScreen} />
@@ -258,7 +453,6 @@ export default function App({ route }) {
   return <AppNavigator />;
 }
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -281,8 +475,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 5,
-   
-    
     marginBottom: 10,
     borderRadius: 15,
     marginHorizontal: 15,
@@ -295,6 +487,12 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    borderRadius: 25,
   },
   cardShadow: {
     shadowColor: '#000',
@@ -318,6 +516,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 20,
     padding: 15,
+    backfaceVisibility: 'hidden',
   },
   gameInfo: {
     marginLeft: 20,

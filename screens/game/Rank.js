@@ -1,10 +1,97 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Animated, StatusBar, Vibration, ActivityIndicator, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ref, get } from 'firebase/database';
 import { realtimeDb } from '../../config/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width } = Dimensions.get('window');
+
+// Separate component for rank items with animations - matching Scoreboard's HistoryListItem
+const RankListItem = ({ item, index, currentUser }) => {
+  const itemFadeAnim = useRef(new Animated.Value(0)).current;
+  const itemSlideAnim = useRef(new Animated.Value(50)).current;
+  
+  useEffect(() => {
+    // Using identical animation timing as Scoreboard
+    Animated.parallel([
+      Animated.timing(itemFadeAnim, {
+        toValue: 1,
+        duration: 300, // Match Scoreboard's 300ms duration
+        delay: index * 50, // Same staggered delay as Scoreboard
+        useNativeDriver: true,
+      }),
+      Animated.timing(itemSlideAnim, {
+        toValue: 0,
+        duration: 300,
+        delay: index * 50,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [index]);
+
+  const isCurrentUser = currentUser && item.userId === currentUser.uid;
+  
+  const renderRankBadge = (rank) => {
+    let badgeColors = ['#f0f0f0', '#e0e0e0'];
+    let icon = null;
+
+    if (rank === 1) {
+      badgeColors = ['#FFD700', '#FFC400'];
+      icon = <MaterialCommunityIcons name="crown" size={20} color="#FFF" />;
+    } else if (rank === 2) {
+      badgeColors = ['#C0C0C0', '#A0A0A0'];
+      icon = <MaterialCommunityIcons name="crown" size={18} color="#FFF" />;
+    } else if (rank === 3) {
+      badgeColors = ['#CD7F32', '#B06500'];
+      icon = <MaterialCommunityIcons name="crown" size={16} color="#FFF" />;
+    }
+
+    return (
+      <LinearGradient 
+        colors={badgeColors} 
+        style={[styles.rankBadge, rank <= 3 && styles[`place${rank}Badge`]]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        {icon}
+        <Text style={[styles.rankText, rank <= 3 && styles.topRankText]}>{`#${rank}`}</Text>
+      </LinearGradient>
+    );
+  };
+
+  return (
+    <Animated.View 
+      style={[
+        styles.scoreItemWrapper,
+        {
+          opacity: itemFadeAnim,
+          transform: [{ translateY: itemSlideAnim }]
+        }
+      ]}
+    >
+      <LinearGradient
+        colors={isCurrentUser ? ['#FFF9C4', '#FFECB3'] : ['#ffffff', '#f8f8f8']}
+        style={styles.gradientContainer}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <View style={[styles.scoreContent, isCurrentUser && styles.currentUserItem]}>
+          {renderRankBadge(item.rank)}
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{item.accountName || 'Anonymous Player'}</Text>
+            <Text style={styles.userEmail}>{item.email}</Text>
+          </View>
+          <View style={styles.scoreInfo}>
+            <Text style={styles.highScore}>{item.highScore}</Text>
+            <Text style={styles.gamesPlayed}>Games: {item.totalGames || 0}</Text>
+          </View>
+        </View>
+      </LinearGradient>
+    </Animated.View>
+  );
+};
 
 const Rank = () => {
   const [selectedGame, setSelectedGame] = useState('word'); // 'word' or 'match'
@@ -12,10 +99,18 @@ const Rank = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserRank, setCurrentUserRank] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  // Animation values - exactly like Scoreboard
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
   const fetchScores = async () => {
     try {
       setRefreshing(true);
+      setLoading(true);
+      
       const gamePath = selectedGame === 'word' ? 'wordgame/userScores' : 'matchgame/userScores';
       const scoresRef = ref(realtimeDb, gamePath);
       const snapshot = await get(scoresRef);
@@ -40,6 +135,7 @@ const Rank = () => {
       console.error('Error fetching scores:', error);
     } finally {
       setRefreshing(false);
+      setLoading(false);
     }
   };
 
@@ -57,170 +153,195 @@ const Rank = () => {
     getCurrentUser();
   }, []);
 
+  // Mirror the same pattern as Scoreboard - resetAnimation + fetchScores when game type changes
   useEffect(() => {
+    // Reset animations on game change (like Scoreboard)
+    fadeAnim.setValue(0);
+    slideAnim.setValue(50);
+    scaleAnim.setValue(0.9);
+    
     fetchScores();
+    
+    // Start animations - identical to Scoreboard
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      })
+    ]).start();
   }, [selectedGame, currentUser]);
 
-  const renderRankBadge = (rank) => {
-    let badgeStyle = styles.rankBadge;
-    let badgeTextStyle = styles.rankText;
-    let icon = null;
-
-    if (rank === 1) {
-      badgeStyle = styles.firstPlace;
-      icon = <MaterialCommunityIcons name="crown" size={20} color="#FFD700" />;
-    } else if (rank === 2) {
-      badgeStyle = styles.secondPlace;
-      icon = <MaterialCommunityIcons name="crown" size={18} color="#C0C0C0" />;
-    } else if (rank === 3) {
-      badgeStyle = styles.thirdPlace;
-      icon = <MaterialCommunityIcons name="crown" size={16} color="#CD7F32" />;
+  const handleGameChange = (game) => {
+    if (game !== selectedGame) {
+      Vibration.vibrate(20); // Short vibration like Scoreboard
+      setSelectedGame(game);
     }
-
-    return (
-      <View style={badgeStyle}>
-        {icon}
-        <Text style={badgeTextStyle}>{`#${rank}`}</Text>
-      </View>
-    );
   };
 
-  const renderScoreItem = ({ item }) => {
-    const isCurrentUser = currentUser && item.userId === currentUser.uid;
-    return (
-      <View style={styles.scoreItemWrapper}>
-        <LinearGradient
-          colors={isCurrentUser ? ['#FFF9C4', '#FFECB3'] : ['#ffffff', '#f8f8f8']}
-          style={styles.gradientContainer}
-        >
-          <View style={[styles.scoreContent, isCurrentUser && styles.currentUserItem]}>
-            {renderRankBadge(item.rank)}
-            <View style={styles.userInfo}>
-              <Text style={styles.userName}>{item.accountName || 'Anonymous Player'}</Text>
-              <Text style={styles.userEmail}>{item.email}</Text>
-            </View>
-            <View style={styles.scoreInfo}>
-              <Text style={styles.highScore}>{item.highScore}</Text>
-              <Text style={styles.gamesPlayed}>Games: {item.totalGames || 0}</Text>
-            </View>
-          </View>
-        </LinearGradient>
-      </View>
-    );
-  };
+  // Simplified renderItem function that uses the RankListItem component
+  const renderScoreItem = (props) => (
+    <RankListItem {...props} currentUser={currentUser} />
+  );
 
   return (
-    <View style={styles.outerContainer}>
-      <View style={styles.mainContainer}>
-        <View style={styles.gradientWrapper}>
-          <LinearGradient colors={['#F8EDE3', '#DFD3C3']} style={styles.gradientContent}>
-            <View style={styles.contentWrapper}>
-              <View style={styles.header}>
-                <View style={styles.gameToggle}>
-                  <TouchableOpacity
-                    style={[styles.gameButton, selectedGame === 'word' && styles.selectedGame]}
-                    onPress={() => setSelectedGame('word')}
-                  >
-                    <View style={styles.buttonContent}>
-                      <MaterialCommunityIcons 
-                        name="book-alphabet" 
-                        size={24} 
-                        color={selectedGame === 'word' ? '#8D493A' : '#666'} 
-                      />
-                      <Text style={[
-                        styles.gameButtonText, 
-                        selectedGame === 'word' && styles.selectedGameText
-                      ]}>
-                        Word
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[styles.gameButton, selectedGame === 'match' && styles.selectedGame]}
-                    onPress={() => setSelectedGame('match')}
-                  >
-                    <View style={styles.buttonContent}>
-                      <MaterialCommunityIcons 
-                        name="cards" 
-                        size={24} 
-                        color={selectedGame === 'match' ? '#8D493A' : '#666'} 
-                      />
-                      <Text style={[
-                        styles.gameButtonText, 
-                        selectedGame === 'match' && styles.selectedGameText
-                      ]}>
-                        Match
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.userRankCard}>
-                <View style={styles.userStatsRow}>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Your Rank</Text>
-                    <Text style={styles.userRankText}>
-                      {currentUserRank ? `#${currentUserRank}` : '-'}
-                    </Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>High Score</Text>
-                    <Text style={styles.highScoreText}>
-                      {scores.find(s => s.userId === currentUser?.uid)?.highScore || 0}
-                    </Text>
-                  </View>
-                </View>
-                {!currentUserRank && (
-                  <Text style={styles.noGamesText}>Play your first game to get ranked!</Text>
-                )}
-              </View>
-
-              <FlatList
-                style={styles.listContainer}
-                contentContainerStyle={styles.listContentContainer}
-                data={scores}
-                renderItem={renderScoreItem}
-                keyExtractor={(item) => `${selectedGame}-${item.userId}`}
-                refreshControl={
-                  <RefreshControl refreshing={refreshing} onRefresh={fetchScores} />
-                }
-                ListEmptyComponent={
-                  <View style={styles.emptyContainer}>
-                    <MaterialCommunityIcons name="trophy-outline" size={48} color="#8D493A" />
-                    <Text style={styles.emptyText}>No scores yet</Text>
-                  </View>
-                }
-              />
+    <View style={styles.container}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
+      <LinearGradient colors={['#F8EDE3', '#DFD3C3']} style={styles.gradient}>
+        <View style={styles.contentWrapper}>
+          <View style={styles.header}>
+            <View style={styles.gameToggle}>
+              <TouchableOpacity
+                style={[styles.gameButton, selectedGame === 'word' && styles.selectedGame]}
+                onPress={() => handleGameChange('word')}
+              >
+                <MaterialCommunityIcons 
+                  name="book-alphabet" 
+                  size={24} 
+                  color={selectedGame === 'word' ? '#8D493A' : '#666'} 
+                />
+                <Text style={[
+                  styles.gameButtonText, 
+                  selectedGame === 'word' && styles.selectedGameText
+                ]}>
+                  Word
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.gameButton, selectedGame === 'match' && styles.selectedGame]}
+                onPress={() => handleGameChange('match')}
+              >
+                <MaterialCommunityIcons 
+                  name="cards" 
+                  size={24} 
+                  color={selectedGame === 'match' ? '#8D493A' : '#666'} 
+                />
+                <Text style={[
+                  styles.gameButtonText, 
+                  selectedGame === 'match' && styles.selectedGameText
+                ]}>
+                  Match
+                </Text>
+              </TouchableOpacity>
             </View>
-          </LinearGradient>
+          </View>
+
+          <Animated.View 
+            style={[
+              styles.statsCardContainer,
+              {
+                opacity: fadeAnim,
+                transform: [
+                  { translateY: slideAnim },
+                  { scale: scaleAnim }
+                ]
+              }
+            ]}
+          >
+            <LinearGradient
+              colors={['#FFF8E1', '#FFE8C2']}
+              style={styles.statsCard}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.statItem}>
+                <View style={styles.statIconContainer}>
+                  <MaterialCommunityIcons name="medal" size={22} color="#8D493A" />
+                </View>
+                <Text style={styles.statLabel}>Your Rank</Text>
+                <Text style={styles.statValue}>
+                  {currentUserRank ? `#${currentUserRank}` : '-'}
+                </Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <View style={styles.statIconContainer}>
+                  <MaterialCommunityIcons name="trophy" size={22} color="#FFB700" />
+                </View>
+                <Text style={styles.statLabel}>High Score</Text>
+                <Text style={styles.statValue2}>
+                  {scores.find(s => s.userId === currentUser?.uid)?.highScore || 0}
+                </Text>
+              </View>
+              {!currentUserRank && (
+                <View style={styles.noGamesContainer}>
+                  <MaterialCommunityIcons name="controller-classic" size={18} color="#8D493A" />
+                  <Text style={styles.noGamesText}>Play your first game to get ranked!</Text>
+                </View>
+              )}
+            </LinearGradient>
+          </Animated.View>
+
+          {loading && scores.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#8D493A" />
+              <Text style={styles.loadingText}>Loading leaderboard...</Text>
+            </View>
+          ) : (
+            <FlatList
+              style={styles.listContainer}
+              contentContainerStyle={styles.listContent}
+              data={scores}
+              renderItem={renderScoreItem}
+              keyExtractor={(item) => `${selectedGame}-${item.userId}`}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl 
+                  refreshing={refreshing} 
+                  onRefresh={fetchScores} 
+                  colors={['#8D493A']}
+                  tintColor="#8D493A"
+                />
+              }
+              ListEmptyComponent={
+                <Animated.View 
+                  style={[
+                    styles.emptyContainer,
+                    {
+                      opacity: fadeAnim,
+                      transform: [{ scale: scaleAnim }]
+                    }
+                  ]}
+                >
+                  <View style={styles.emptyIconContainer}>
+                    <MaterialCommunityIcons name="trophy-outline" size={48} color="#8D493A" />
+                  </View>
+                  <Text style={styles.emptyText}>No scores yet</Text>
+                  <Text style={styles.emptySubtext}>Be the first to set a high score!</Text>
+                </Animated.View>
+              }
+            />
+          )}
         </View>
-      </View>
+      </LinearGradient>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  outerContainer: {
-    flex: 1,
-  },
-  mainContainer: {
-    flex: 1,
-  },
   container: {
     flex: 1,
-    paddingTop: 20,
+  },
+  gradient: {
+    flex: 1,
+    paddingTop: StatusBar.currentHeight || 0,
+  },
+  contentWrapper: {
+    flex: 1,
   },
   header: {
     padding: 16,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#8D493A',
-    marginBottom: 16,
   },
   gameToggle: {
     flexDirection: 'row',
@@ -228,13 +349,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 4,
     marginBottom: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   gameButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
+    justifyContent: 'center',
+    padding: 10,
     borderRadius: 16,
-    marginHorizontal: 4,
   },
   selectedGame: {
     backgroundColor: '#F8EDE3',
@@ -248,28 +375,131 @@ const styles = StyleSheet.create({
     color: '#8D493A',
     fontWeight: 'bold',
   },
-  scoreItem: {
-    margin: 8,
-    borderRadius: 12,
+  statsCardContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    marginBottom: 16,
+    marginHorizontal: 16,
+  },
+  statsCard: {
+    flexDirection: 'row',
+    borderRadius: 16,
+    padding: 16,
+    justifyContent: 'space-between',
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: 'rgba(141,73,58,0.2)',
+    marginHorizontal: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#8D493A',
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#8D493A',
+  },
+  statValue2: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFB700',
+  },
+  noGamesContainer: {
+    position: 'absolute',
+    bottom: 8,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginHorizontal: 16,
+  },
+  noGamesText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#8D493A',
+    fontStyle: 'italic',
+  },
+  scoreItemWrapper: {
+    marginBottom: 12,
+    marginHorizontal: 16,
+    borderRadius: 16,
     overflow: 'hidden',
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  gradientContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  scoreContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
   },
   currentUserItem: {
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: '#FFB74D',
   },
   rankBadge: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
+    elevation: 2,
+  },
+  place1Badge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  place2Badge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
+  place3Badge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   rankText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#666',
+  },
+  topRankText: {
+    color: '#FFF',
+    fontSize: 16,
   },
   userInfo: {
     flex: 1,
@@ -279,6 +509,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
+    marginBottom: 2,
   },
   userEmail: {
     fontSize: 12,
@@ -288,104 +519,59 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   highScore: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#8D493A',
   },
   gamesPlayed: {
     fontSize: 12,
     color: '#666',
-  },
-  userRankCard: {
-    margin: 16,
-    padding: 16,
-    backgroundColor: '#FFF8E1',
-    borderRadius: 12,
-    alignItems: 'center',
-    elevation: 2,
-  },
-  userRankText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#8D493A',
-  },
-  emptyContainer: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyText: {
-    marginTop: 8,
-    fontSize: 16,
-    color: '#666',
-  },
-  contentContainer: {
-    flex: 1,
-  },
-  scoreItemWrapper: {
-    margin: 8,
-  },
-  scoreContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
-  contentWrapper: {
-    flex: 1,
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  gradientContainer: {
-    borderRadius: 12,
-    margin: 8,
-    elevation: 2,
-  },
-  gradientWrapper: {
-    flex: 1,
-  },
-  gradientContent: {
-    flex: 1,
+    marginTop: 2,
   },
   listContainer: {
     flex: 1,
   },
-  listContentContainer: {
+  listContent: {
     flexGrow: 1,
+    paddingBottom: 16,
   },
-  userStatsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    paddingHorizontal: 16,
-  },
-  statItem: {
+  emptyContainer: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
   },
-  statLabel: {
-    fontSize: 14,
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(141,73,58,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyText: {
+    fontSize: 18,
     color: '#8D493A',
-    marginBottom: 4,
-    fontFamily: 'Comic Sans MS',
-  },
-  userRankText: {
-    fontSize: 24,
     fontWeight: 'bold',
-    color: '#8D493A',
-    fontFamily: 'Comic Sans MS',
   },
-  highScoreText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FFB700',
-    fontFamily: 'Comic Sans MS',
-  },
-  noGamesText: {
+  emptySubtext: {
     marginTop: 8,
     fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
+    color: '#8D493A',
+    opacity: 0.7,
     textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#8D493A',
   },
 });
 

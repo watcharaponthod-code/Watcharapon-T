@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView, View, ScrollView, Image, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Platform, ActivityIndicator, StatusBar } from 'react-native';
+import { SafeAreaView, View, ScrollView, Image, Text, TextInput, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, StatusBar } from 'react-native';
 import Animated, { Easing, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useNavigation } from '@react-navigation/native';
 import { auth, db } from '../config/firebase';
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import FlashMessage, { showMessage } from 'react-native-flash-message';
 
 const SignUpApp = () => {
   const [accountName, setAccountName] = useState('');
@@ -47,19 +48,100 @@ const SignUpApp = () => {
     setIsLoading(true);
     
     try {
-      // Validation
-      if (!accountName || !email || !password) {
-        Alert.alert('Notice', 'Please fill in all fields');
+      // Check if multiple fields are empty first
+      const emptyFieldsMap = {
+        accountName: !accountName,
+        email: !email,
+        password: !password || !confirmPassword, // Consider both password fields as one
+      };
+      
+      // Count empty unique fields (password and confirmPassword count as one field)
+      const uniqueEmptyFieldsCount = Object.values(emptyFieldsMap).filter(Boolean).length;
+      
+      if (uniqueEmptyFieldsCount > 1) {
+        showMessage({
+          message: "Notice",
+          description: "Please fill in all fields",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Individual field validation only if exactly one field category is empty
+      if (emptyFieldsMap.accountName) {
+        showMessage({
+          message: "Notice",
+          description: "Please enter your Account Name",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
+        setIsLoading(false);
         return;
       }
 
+      if (emptyFieldsMap.email) {
+        showMessage({
+          message: "Notice",
+          description: "Please enter your Email address",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Email format validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        showMessage({
+          message: "Notice",
+          description: "Invalid email format. Please enter a valid email address",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (emptyFieldsMap.password) {
+        showMessage({
+          message: "Notice",
+          description: "Please enter your Password",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
+        setIsLoading(false);
+        return;
+      }
+      
       if (password !== confirmPassword) {
-        Alert.alert('Notice', 'Passwords do not match');
+        showMessage({
+          message: "Notice",
+          description: "Passwords do not match",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
+        setIsLoading(false);
         return;
       }
 
       if (password.length < 6) {
-        Alert.alert('Notice', 'Password must be at least 6 characters');
+        showMessage({
+          message: "Notice",
+          description: "Password must be at least 6 characters",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
+        setIsLoading(false);
         return;
       }
 
@@ -92,18 +174,37 @@ const SignUpApp = () => {
 
       console.log('Signup successful:', user.uid);
 
-      Alert.alert(
-        'Success', 
-        'Registration completed. Please check your email and click the verification link before logging in.\n\nPlease check both your inbox and spam folder.', 
-        [{ text: 'OK', onPress: () => navigation.navigate('LoginApp') }]
-      );
+      showMessage({
+        message: "Success",
+        description: "Registration completed. Please check your email (inbox & spam folder) and click the verification link before logging in.",
+        type: "success",
+        duration: 5000,
+        icon: "success",
+        backgroundColor: "#40260C",
+        color: "#FAF0CC",
+        onHide: () => navigation.goBack()
+      });
 
     } catch (error) {
       console.error('Signup error:', error);
       if (error.code === 'auth/email-already-in-use') {
-        Alert.alert('Notice', 'This email is already in use');
+        showMessage({
+          message: "Registration Error",
+          description: "This email is already in use",
+          type: "danger",
+          duration: 3000,
+          icon: "danger",
+          backgroundColor: "#FF0000",
+        });
       } else {
-        Alert.alert('Notice', 'Registration failed. Please try again');
+        showMessage({
+          message: "Registration Error",
+          description: "Registration failed. Please try again",
+          type: "danger",
+          duration: 3000,
+          icon: "danger",
+          backgroundColor: "#FF0000",
+        });
       }
     } finally {
       setIsLoading(false);
@@ -124,7 +225,7 @@ const SignUpApp = () => {
       >
         <Animated.View style={[{ flex: 1 }, animatedStyle]}>
           <View style={styles.view}>
-            <Image source={require('../assets/elic.jpg')} resizeMode="stretch" style={styles.image2} />
+            <Image source={require('../assets/elic.png')} resizeMode="stretch" style={styles.image2} />
           </View>
 
           <View style={styles.view2}>
@@ -196,6 +297,7 @@ const SignUpApp = () => {
           </View>
         </Animated.View>
       </ScrollView>
+      <FlashMessage position="top" />
     </SafeAreaView>
   );
 };

@@ -1,10 +1,99 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Animated, Dimensions, StatusBar, Vibration } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ref, get } from 'firebase/database';
 import { realtimeDb } from '../../config/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { width } = Dimensions.get('window');
+
+// Create a separate component for list items to use hooks properly
+const HistoryListItem = ({ item, index, selectedGame }) => {
+  const itemFadeAnim = useRef(new Animated.Value(0)).current;
+  const itemSlideAnim = useRef(new Animated.Value(50)).current;
+  
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(itemFadeAnim, {
+        toValue: 1,
+        duration: 300,
+        delay: index * 50,
+        useNativeDriver: true,
+      }),
+      Animated.timing(itemSlideAnim, {
+        toValue: 0,
+        duration: 300,
+        delay: index * 50,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [index]);
+
+  return (
+    <Animated.View 
+      style={[
+        styles.historyItem,
+        {
+          opacity: itemFadeAnim,
+          transform: [{ translateY: itemSlideAnim }]
+        }
+      ]}
+    >
+      <LinearGradient
+        colors={['#ffffff', '#f8f8f8']}
+        style={styles.gradientContainer}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <View style={styles.historyContent}>
+          <View style={styles.dateContainer}>
+            <Text style={styles.dateText}>
+              {item.date.toLocaleDateString('th-TH', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </Text>
+            <Text style={styles.timeText}>
+              {item.date.toLocaleTimeString('th-TH', {
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
+            </Text>
+            {item.category && (
+              <View style={styles.categoryBadge}>
+                <Text style={styles.categoryText}>{item.category}</Text>
+              </View>
+            )}
+            <View style={styles.detailsRow}>
+              {item.roundsPlayed && (
+                <View style={styles.detailBadge}>
+                  <MaterialCommunityIcons name="controller-classic" size={12} color="#8D493A" />
+                  <Text style={styles.roundText}>{item.roundsPlayed}</Text>
+                </View>
+              )}
+              {item.difficulty && (
+                <View style={[styles.detailBadge, styles.difficultyBadge]}>
+                  <MaterialCommunityIcons name="signal" size={12} color="#8D493A" />
+                  <Text style={styles.difficultyText}>{item.difficulty}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+          <View style={styles.scoreContainer}>
+            <Text style={styles.scoreText}>
+              {item.score}{selectedGame === 'translate' ? '%' : ''}
+            </Text>
+            <View style={styles.scoreBadge}>
+              <Text style={styles.scoreLabel}>Score</Text>
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
+    </Animated.View>
+  );
+};
 
 const Scoreboard = () => {
   const [selectedGame, setSelectedGame] = useState('word');
@@ -12,11 +101,39 @@ const Scoreboard = () => {
   const [userStats, setUserStats] = useState({
     totalGames: 0,
     highScore: 0,
-    highRounds: 0  // Add highRounds to state
+    highRounds: 0
   });
-
+  
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  
   useEffect(() => {
     fetchUserHistory();
+    
+    // Reset and start animations when game type changes
+    fadeAnim.setValue(0);
+    slideAnim.setValue(50);
+    scaleAnim.setValue(0.9);
+    
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      })
+    ]).start();
   }, [selectedGame]);
 
   const fetchUserHistory = async () => {
@@ -89,56 +206,29 @@ const Scoreboard = () => {
     }
   };
 
-  const renderHistoryItem = ({ item }) => (
-    <View style={styles.historyItem}>
-      <LinearGradient
-        colors={['#ffffff', '#f8f8f8']}
-        style={styles.gradientContainer}
-      >
-        <View style={styles.historyContent}>
-          <View style={styles.dateContainer}>
-            <Text style={styles.dateText}>
-              {item.date.toLocaleDateString('th-TH', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </Text>
-            <Text style={styles.timeText}>
-              {item.date.toLocaleTimeString('th-TH', {
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
-            </Text>
-            {item.category && (
-              <Text style={styles.categoryText}>Category: {item.category}</Text>
-            )}
-            {item.roundsPlayed && (
-              <Text style={styles.roundText}>Rounds: {item.roundsPlayed}</Text>
-            )}
-            {item.difficulty && (
-              <Text style={styles.difficultyText}>Level: {item.difficulty}</Text>
-            )}
-          </View>
-          <View style={styles.scoreContainer}>
-            <Text style={styles.scoreText}>
-              {item.score}{selectedGame === 'translate' ? '%' : ''}
-            </Text>
-            <Text style={styles.scoreLabel}>Score</Text>
-          </View>
-        </View>
-      </LinearGradient>
-    </View>
+  const handleGameChange = (game) => {
+    if (game !== selectedGame) {
+      Vibration.vibrate(20); // Short vibration instead of haptic feedback
+      setSelectedGame(game);
+    }
+  };
+
+  // Simplified renderItem function that uses the HistoryListItem component
+  const renderHistoryItem = (props) => (
+    <HistoryListItem {...props} selectedGame={selectedGame} />
   );
 
   return (
     <View style={styles.container}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <LinearGradient colors={['#F8EDE3', '#DFD3C3']} style={styles.gradient}>
+        
+
         <View style={styles.header}>
           <View style={styles.gameToggle}>
             <TouchableOpacity
               style={[styles.gameButton, selectedGame === 'word' && styles.selectedGame]}
-              onPress={() => setSelectedGame('word')}
+              onPress={() => handleGameChange('word')}
             >
               <MaterialCommunityIcons 
                 name="book-alphabet" 
@@ -152,7 +242,7 @@ const Scoreboard = () => {
 
             <TouchableOpacity
               style={[styles.gameButton, selectedGame === 'translate' && styles.selectedGame]}
-              onPress={() => setSelectedGame('translate')}
+              onPress={() => handleGameChange('translate')}
             >
               <MaterialCommunityIcons 
                 name="translate" 
@@ -166,7 +256,7 @@ const Scoreboard = () => {
 
             <TouchableOpacity
               style={[styles.gameButton, selectedGame === 'match' && styles.selectedGame]}
-              onPress={() => setSelectedGame('match')}
+              onPress={() => handleGameChange('match')}
             >
               <MaterialCommunityIcons 
                 name="cards" 
@@ -177,54 +267,100 @@ const Scoreboard = () => {
                 Match
               </Text>
             </TouchableOpacity>
-
-            
           </View>
 
-          <View style={styles.statsCard}>
-            {selectedGame === 'translate' ? (
-              <>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Total Games</Text>
-                  <Text style={styles.statValue}>{userStats.totalGames}</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>High Score</Text>
-                  <Text style={styles.statValue2}>{userStats.highScore}%</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>High Rounds</Text>
-                  <Text style={styles.statValue}>{userStats.highRounds}</Text>
-                </View>
-              </>
-            ) : (
-              <>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Total Games</Text>
-                  <Text style={styles.statValue}>{userStats.totalGames}</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>High Score</Text>
-                  <Text style={styles.statValue2}>
-                    {userStats.highScore}{selectedGame === 'translate' ? '%' : ''}
-                  </Text>
-                </View>
-              </>
-            )}
-          </View>
-
+          <Animated.View 
+            style={[
+              styles.statsCardContainer,
+              {
+                opacity: fadeAnim,
+                transform: [
+                  { translateY: slideAnim },
+                  { scale: scaleAnim }
+                ]
+              }
+            ]}
+          >
+            <LinearGradient
+              colors={['#FFF8E1', '#FFE8C2']}
+              style={styles.statsCard}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              {selectedGame === 'translate' ? (
+                <>
+                  <View style={styles.statItem}>
+                    <View style={styles.statIconContainer}>
+                      <MaterialCommunityIcons name="gamepad-variant" size={22} color="#8D493A" />
+                    </View>
+                    <Text style={styles.statLabel}>Total Games</Text>
+                    <Text style={styles.statValue}>{userStats.totalGames}</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <View style={styles.statIconContainer}>
+                      <MaterialCommunityIcons name="trophy" size={22} color="#FFB700" />
+                    </View>
+                    <Text style={styles.statLabel}>High Score</Text>
+                    <Text style={styles.statValue2}>{userStats.highScore}%</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <View style={styles.statIconContainer}>
+                      <MaterialCommunityIcons name="fire" size={22} color="#8D493A" />
+                    </View>
+                    <Text style={styles.statLabel}>High Rounds</Text>
+                    <Text style={styles.statValue}>{userStats.highRounds}</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.statItem}>
+                    <View style={styles.statIconContainer}>
+                      <MaterialCommunityIcons name="gamepad-variant" size={22} color="#8D493A" />
+                    </View>
+                    <Text style={styles.statLabel}>Total Games</Text>
+                    <Text style={styles.statValue}>{userStats.totalGames}</Text>
+                  </View>
+                  <View style={styles.statDivider} />
+                  <View style={styles.statItem}>
+                    <View style={styles.statIconContainer}>
+                      <MaterialCommunityIcons name="trophy" size={22} color="#FFB700" />
+                    </View>
+                    <Text style={styles.statLabel}>High Score</Text>
+                    <Text style={styles.statValue2}>
+                      {userStats.highScore}{selectedGame === 'translate' ? '%' : ''}
+                    </Text>
+                  </View>
+                </>
+              )}
+            </LinearGradient>
+          </Animated.View>
         </View>
 
+        
         <FlatList
           data={gameHistory}
           renderItem={renderHistoryItem}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="history" size={48} color="#8D493A" />
+            <Animated.View 
+              style={[
+                styles.emptyContainer,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ scale: scaleAnim }]
+                }
+              ]}
+            >
+              <View style={styles.emptyIconContainer}>
+                <MaterialCommunityIcons name="history" size={48} color="#8D493A" />
+              </View>
               <Text style={styles.emptyText}>No game history</Text>
-            </View>
+              <Text style={styles.emptySubtext}>Play a game to see your results here</Text>
+            </Animated.View>
           }
         />
       </LinearGradient>
@@ -238,6 +374,24 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
+    paddingTop: StatusBar.currentHeight || 0,
+  },
+  headerContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  screenTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#8D493A',
+    letterSpacing: 0.5,
+  },
+  screenSubtitle: {
+    fontSize: 14,
+    color: '#8D493A',
+    opacity: 0.8,
+    marginTop: 4,
   },
   header: {
     padding: 16,
@@ -248,13 +402,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 4,
     marginBottom: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   gameButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 8,
+    padding: 10,
     borderRadius: 16,
   },
   selectedGame: {
@@ -269,21 +428,42 @@ const styles = StyleSheet.create({
     color: '#8D493A',
     fontWeight: 'bold',
   },
+  statsCardContainer: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    marginBottom: 16,
+  },
   statsCard: {
     flexDirection: 'row',
-    backgroundColor: '#FFF8E1',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
-    elevation: 2,
     justifyContent: 'space-between',
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: 'rgba(141,73,58,0.2)',
+    marginHorizontal: 8,
+  },
   statLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#8D493A',
     marginBottom: 4,
   },
@@ -297,12 +477,33 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFB700',
   },
-  historyItem: {
+  historyHeaderContainer: {
+    paddingHorizontal: 16,
     marginBottom: 8,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#8D493A',
+  },
+  historySubtitle: {
+    fontSize: 12,
+    color: '#8D493A',
+    opacity: 0.8,
+  },
+  historyItem: {
+    marginBottom: 12,
     marginHorizontal: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   gradientContainer: {
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
   },
   historyContent: {
@@ -321,32 +522,72 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 14,
     color: '#666',
+    marginBottom: 8,
   },
-  roundText: {
-    fontSize: 14,
-    color: '#666',
+  detailsRow: {
+    flexDirection: 'row',
     marginTop: 4,
   },
-  difficultyText: {
-    fontSize: 14,
+  categoryBadge: {
+    backgroundColor: 'rgba(141,73,58,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  categoryText: {
+    fontSize: 12,
     color: '#8D493A',
-    marginTop: 2,
+    fontWeight: '500',
+  },
+  detailBadge: {
+    backgroundColor: 'rgba(141,73,58,0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  difficultyBadge: {
+    backgroundColor: 'rgba(255,183,0,0.1)',
+  },
+  roundText: {
+    fontSize: 12,
+    color: '#8D493A',
+    marginLeft: 4,
+  },
+  difficultyText: {
+    fontSize: 12,
+    color: '#8D493A',
+    marginLeft: 4,
     fontWeight: '500',
   },
   scoreContainer: {
     alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   scoreText: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#8D493A',
+    marginBottom: 4,
+  },
+  scoreBadge: {
+    backgroundColor: 'rgba(141,73,58,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
   },
   scoreLabel: {
     fontSize: 12,
-    color: '#666',
+    color: '#8D493A',
+    fontWeight: '500',
   },
   listContent: {
     flexGrow: 1,
+    paddingBottom: 16,
   },
   emptyContainer: {
     flex: 1,
@@ -354,16 +595,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 32,
   },
-  emptyText: {
-    marginTop: 8,
-    fontSize: 16,
-    color: '#666',
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(141,73,58,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
   },
-  categoryText: {
+  emptyText: {
+    fontSize: 18,
+    color: '#8D493A',
+    fontWeight: 'bold',
+  },
+  emptySubtext: {
+    marginTop: 8,
     fontSize: 14,
     color: '#8D493A',
-    marginTop: 4,
-    fontStyle: 'italic'
+    opacity: 0.7,
+    textAlign: 'center',
   },
 });
 

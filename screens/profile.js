@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { SafeAreaView, View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Modal, ScrollView, ActivityIndicator } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useState, useEffect, useRef } from 'react';
+import { SafeAreaView, View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Modal, ScrollView, ActivityIndicator, Animated, PanResponder, Dimensions, Platform } from 'react-native';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { auth, db, realtimeDb } from '../config/firebase';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
@@ -8,15 +9,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ref, update, get } from 'firebase/database';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 
+const { height } = Dimensions.get('window');
+
 const ProfileScreen = () => {
   const navigation = useNavigation();
   const [userData, setUserData] = useState({
     accountName: '',
     email: ''
   });
-  const [isEditing, setIsEditing] = useState(false);
+  
   const [newName, setNewName] = useState('');
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showLogoutSheet, setShowLogoutSheet] = useState(false);
   const [showPasswordSection, setShowPasswordSection] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -27,9 +30,13 @@ const ProfileScreen = () => {
   const [showNameSection, setShowNameSection] = useState(false);
   const [showNameConfirmModal, setShowNameConfirmModal] = useState(false);
   const [showPasswordConfirmModal, setShowPasswordConfirmModal] = useState(false);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [showErrorModal, setShowErrorModal] = useState(false);
-  const [alertMessage, setAlertMessage] = useState('');
+  
+  const [flashMessage, setFlashMessage] = useState({
+    visible: false,
+    type: '',
+    message: '',
+  });
+  
   const [nameError, setNameError] = useState('');
   const [highScores, setHighScores] = useState({
     wordGame: 0,
@@ -38,6 +45,33 @@ const ProfileScreen = () => {
   });
   const [isLoading, setIsLoading] = useState(true);
 
+ 
+  const slideAnim = useRef(new Animated.Value(height)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const flashAnim = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          slideAnim.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 50) {
+          closeBottomSheet();
+        } else {
+          Animated.spring(slideAnim, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
   useEffect(() => {
     loadLocalData();
     fetchUserData();
@@ -45,22 +79,38 @@ const ProfileScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (showSuccessModal) {
-      const timer = setTimeout(() => {
-        setShowSuccessModal(false);
-      }, 1000);
-      return () => clearTimeout(timer);
+    if (flashMessage.visible) {
+      Animated.sequence([
+        Animated.timing(flashAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.delay(2000),
+        Animated.timing(flashAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        })
+      ]).start(() => {
+        setFlashMessage(prev => ({ ...prev, visible: false }));
+      });
     }
-  }, [showSuccessModal]);
+  }, [flashMessage.visible]);
 
   useEffect(() => {
-    if (showErrorModal) {
-      const timer = setTimeout(() => {
-        setShowErrorModal(false);
-      }, 1000);
-      return () => clearTimeout(timer);
+    if (showLogoutSheet) {
+      openBottomSheet();
     }
-  }, [showErrorModal]);
+  }, [showLogoutSheet]);
+
+  const showFlashMessage = (type, message) => {
+    setFlashMessage({
+      visible: true,
+      type,
+      message
+    });
+  };
 
   const saveUserDataToStorage = async (data) => {
     try {
@@ -138,16 +188,44 @@ const ProfileScreen = () => {
       const wordGameRef = ref(realtimeDb, `wordgame/userScores/${user.uid}`);
       const translateGameRef = ref(realtimeDb, `translategame/userScores/${user.uid}`);
       const matchGameRef = ref(realtimeDb, `matchgame/userScores/${user.uid}`);
+      const translateHistoryRef = ref(realtimeDb, `translategame/history/${user.uid}`);
 
-      const [wordSnap, translateSnap, matchSnap] = await Promise.all([
+      const [wordSnap, translateSnap, matchSnap, translateHistorySnap] = await Promise.all([
         get(wordGameRef),
         get(translateGameRef),
-        get(matchGameRef)
+        get(matchGameRef),
+        get(translateHistoryRef)
       ]);
+
+      // For translate game, we need to calculate the best score from history like in scoreboard
+      let translateHighScore = translateSnap.val()?.highScore || 0;
+      
+      // If history exists, calculate weighted score
+      if (translateHistorySnap.exists()) {
+        const historyData = translateHistorySnap.val() || {};
+        
+        // Convert history to array and add weighted score calculation
+        const historyArray = Object.entries(historyData).map(([key, value]) => ({
+          id: key,
+          ...value,
+          date: new Date(value.timestamp),
+          // Weight formula: score + (roundsPlayed * 10) - same as in Scoreboard.js
+          weightedScore: (value.score || 0) + ((value.roundsPlayed || 0) * 10)
+        }));
+        
+        // Find entry with highest weighted score
+        if (historyArray.length > 0) {
+          const bestEntry = historyArray.reduce((best, current) => {
+            return current.weightedScore > best.weightedScore ? current : best;
+          }, historyArray[0]);
+          
+          translateHighScore = bestEntry.score || 0;
+        }
+      }
 
       const newScores = {
         wordGame: wordSnap.val()?.highScore || 0,
-        translateGame: translateSnap.val()?.highScore || 0,
+        translateGame: translateHighScore,
         matchGame: matchSnap.val()?.highScore || 0
       };
 
@@ -163,6 +241,12 @@ const ProfileScreen = () => {
     
     if (!newName.trim()) {
       setNameError('Name cannot be empty');
+      return;
+    }
+    
+    // Additional check in case modal was somehow bypassed
+    if (newName.trim() === userData.accountName) {
+      setNameError('New name is the same as current name');
       return;
     }
 
@@ -190,12 +274,10 @@ const ProfileScreen = () => {
       setUserData(updatedData);
       saveUserDataToStorage(updatedData);
       setShowNameSection(false);
-      setAlertMessage('Profile updated successfully');
-      setShowSuccessModal(true);
+      showFlashMessage('success', 'Profile updated successfully');
     } catch (error) {
       console.error('Error updating profile:', error);
-      setAlertMessage('Cannot update profile. Please try again.');
-      setShowErrorModal(true);
+      showFlashMessage('error', 'Cannot update profile. Please try again.');
     }
   };
 
@@ -222,9 +304,7 @@ const ProfileScreen = () => {
       
       await reauthenticateWithCredential(user, credential);
       await updatePassword(user, passwordData.newPassword);
-      
-      setAlertMessage('Password updated successfully');
-      setShowSuccessModal(true);
+      showFlashMessage('success', 'Password updated successfully');
       setShowPasswordSection(false);
       setPasswordData({
         currentPassword: '',
@@ -233,8 +313,7 @@ const ProfileScreen = () => {
       });
     } catch (error) {
       console.error('Error updating password:', error);
-      setAlertMessage('Current password is incorrect');
-      setShowErrorModal(true);
+      showFlashMessage('error', 'Current password is incorrect');
     }
   };
 
@@ -256,7 +335,7 @@ const ProfileScreen = () => {
   };
 
   const handleLogout = () => {
-    setShowLogoutModal(true);
+    setShowLogoutSheet(true);
   };
 
   const confirmLogout = async () => {
@@ -271,7 +350,7 @@ const ProfileScreen = () => {
       console.error('Logout error:', error);
       Alert.alert('Error', 'Cannot logout.');
     }
-    setShowLogoutModal(false);
+    closeBottomSheet();
   };
 
   const handleNameSectionToggle = () => {
@@ -286,8 +365,48 @@ const ProfileScreen = () => {
       setNameError('Name cannot be empty');
       return;
     }
+    
+    // Check if the new name is the same as the current name
+    if (newName.trim() === userData.accountName) {
+      setNameError('New name is the same as current name');
+      return;
+    }
+    
     setNameError('');
     setShowNameConfirmModal(true);
+  };
+
+  const openBottomSheet = () => {
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 1,
+        tension: 50,
+        friction: 10,
+        useNativeDriver: true,
+      })
+    ]).start();
+  };
+
+  const closeBottomSheet = () => {
+    Animated.parallel([
+      Animated.timing(backdropOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: height,
+        duration: 300,
+        useNativeDriver: true,
+      })
+    ]).start(() => {
+      setShowLogoutSheet(false);
+    });
   };
 
   if (isLoading) {
@@ -302,6 +421,28 @@ const ProfileScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <Animated.View 
+        style={[
+          styles.flashMessage, 
+          flashMessage.type === 'success' ? styles.successFlash : styles.errorFlash,
+          { opacity: flashAnim, transform: [{ translateY: flashAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-50, 0]
+          })}] 
+          }
+        ]}
+        pointerEvents="none"
+      >
+        <View style={styles.flashContent}>
+          <Ionicons 
+            name={flashMessage.type === 'success' ? "checkmark-circle" : "alert-circle"} 
+            size={24} 
+            color={flashMessage.type === 'success' ? "#FFFFFF" : "#FFFFFF"} 
+          />
+          <Text style={styles.flashText}>{flashMessage.message}</Text>
+        </View>
+      </Animated.View>
+
       <ScrollView 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContainer}
@@ -426,36 +567,66 @@ const ProfileScreen = () => {
         </View>
       </ScrollView>
 
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={showLogoutModal}
-        onRequestClose={() => setShowLogoutModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-          <Ionicons name="log-out-outline" size={90} color="#FF6B6B" style={styles.modalIcon} />
-           
-            <Text style={styles.modalText}>Are you sure you want to logout?</Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.cancelButton]} 
-                onPress={() => setShowLogoutModal(false)}
+      {showLogoutSheet && (
+        <View style={styles.bottomSheetContainer}>
+          <Animated.View 
+            style={[
+              styles.backdrop,
+              {
+                opacity: backdropOpacity,
+              }
+            ]}
+            onTouchStart={closeBottomSheet}
+          />
+          <Animated.View
+            style={[
+              styles.bottomSheet,
+              {
+                transform: [{ translateY: slideAnim }],
+              }
+            ]}
+          >
+            <View style={styles.logoutContentContainer}>
+              <View style={styles.bottomSheetHandle} {...panResponder.panHandlers}>
+                <View style={styles.handleBar} />
+              </View>
+              <LinearGradient
+                colors={['#FFFFFF', '#FFF8F8']}
+                style={styles.gradientBackground}
               >
-                <Ionicons name="close-outline" size={20} color="#5A3E2B" />
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.logoutButton]} 
-                onPress={confirmLogout}
-              >
-                <Ionicons name="checkmark-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.logoutButtonText}>Confirm</Text>
-              </TouchableOpacity>
+                <View style={styles.bottomSheetContent}>
+                  <View style={styles.logoutIconContainer}>
+                    <Ionicons name="log-out-outline" size={45} color="white" />
+                  </View>
+                  <Text style={styles.sheetTitle}>Log Out</Text>
+                  <View style={styles.accountNameContainer}>
+                    <FontAwesome5 name="user-circle" size={14} color="#FF6B6B" style={styles.userIcon} />
+                    <Text style={styles.accountNameDisplay}>{userData.accountName}</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.logoutSheetButton} 
+                    onPress={confirmLogout}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient
+                      colors={['#FF6B6B', '#FF4949']}
+                      style={styles.buttonGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      <Text style={styles.logoutSheetButtonText}>Logout</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  <View style={styles.swipeIndicatorContainer}>
+                    <Ionicons name="chevron-down" size={18} color="#999" />
+                    <Text style={styles.swipeText}>Swipe down to cancel</Text>
+                  </View>
+                </View>
+              </LinearGradient>
             </View>
-          </View>
+          </Animated.View>
         </View>
-      </Modal>
+      )}
 
       <Modal
         animationType="fade"
@@ -516,35 +687,14 @@ const ProfileScreen = () => {
           </View>
         </View>
       </Modal>
-
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={showSuccessModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.successModalContent]}>
-            <Ionicons name="checkmark-circle" size={90} color="#4CAF50" style={styles.modalIcon} />
-            <Text style={[styles.modalText, styles.successText]}>{alertMessage}</Text>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={showErrorModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.errorModalContent]}>
-            <Ionicons name="alert-circle" size={90} color="#FF6B6B" style={styles.modalIcon} />
-            <Text style={[styles.modalText, styles.errorModalText]}>{alertMessage}</Text>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
+
+// แก้ไขการคำนวณ bottomSheetHeight
+const bottomSheetHeight = Platform.select({
+  android: height * 0.30 // ปรับให้สูงขึ้นบน Android
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -725,54 +875,6 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     
   },
-  successModalContent: {
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-    maxWidth: 300,
-    padding: 25,
-  },
-  errorModalContent: {
-    borderWidth: 1,
-    borderColor: '#FF6B6B',
-    maxWidth: 300,
-    padding: 25,
-  },
-  successText: {
-    color: '#4CAF50',
-    fontSize: 18,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  errorModalText: {
-    color: '#FF6B6B',
-    fontSize: 18,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  successButton: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 25,
-    marginTop: 10,
-  },
-  errorButton: {
-    backgroundColor: '#FF6B6B',
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 25,
-    marginTop: 10,
-  },
-  successButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  errorButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
-  },
   highScoresContainer: {
     marginBottom: 20,
   },
@@ -821,6 +923,195 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  bottomSheetContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    top: 0,
+    zIndex: 1000,
+  },
+  backdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    top: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  bottomSheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: bottomSheetHeight,
+    backgroundColor: 'transparent',
+  },
+  logoutContentContainer: {
+    width: '100%',
+    backgroundColor: 'white',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingBottom: Platform.OS === 'ios' ? 35 : 25,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: -5,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 12,
+    overflow: 'hidden',
+  },
+  gradientBackground: {
+    width: '100%',
+  },
+  bottomSheetHandle: {
+    width: '100%',
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  handleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: '#DFD3C3',
+    marginTop: 8,
+  },
+  bottomSheetContent: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingHorizontal: 25,
+    paddingVertical: 15,
+  },
+  logoutIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FF6B6B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#FF6B6B',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+    borderWidth: 3,
+    borderColor: 'rgba(255, 107, 107, 0.2)',
+  },
+  sheetTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#5A3E2B',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  accountNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    paddingHorizontal: 15,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.2)',
+  },
+  userIcon: {
+    marginRight: 6,
+  },
+  accountNameDisplay: {
+    fontSize: 15,
+    color: '#FF6B6B',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  sheetText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 15,
+    lineHeight: 18,
+  },
+  logoutSheetButton: {
+    width: '100%',
+    shadowColor: '#FF6B6B',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 6,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  buttonGradient: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+  },
+  logoutSheetButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 16,
+    letterSpacing: 0.5,
+  },
+  swipeIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 5,
+    paddingBottom: 5,
+  },
+  swipeText: {
+    fontSize: 13,
+    color: '#999',
+    marginLeft: 5,
+  },
+  flashMessage: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 30,
+    left: 20,
+    right: 20,
+    borderRadius: 10,
+    zIndex: 1001,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.27,
+    shadowRadius: 4.65,
+    elevation: 6,
+  },
+  successFlash: {
+    backgroundColor: '#4CAF50',
+  },
+  errorFlash: {
+    backgroundColor: '#FF6B6B',
+  },
+  flashContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+  },
+  flashText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 10,
+    flex: 1,
   },
 });
 

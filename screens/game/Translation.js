@@ -4,7 +4,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useNavigation } from '@react-navigation/native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
-import { getRandomSentence } from '../option/random1'; // Import the getRandomSentence function
+import { getRandomSentence } from '../option/random1'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ref, push, set, get } from 'firebase/database';
 import { realtimeDb } from '../../config/firebase';
@@ -45,6 +45,10 @@ const TranslationGame = () => {
   const [showSummary, setShowSummary] = useState(false);
   const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState(false);
   const [summaryModalVisible, setSummaryModalVisible] = useState(false);
+  const [howToPlayVisible, setHowToPlayVisible] = useState(false);
+  const [buttonScale] = useState(new Animated.Value(1));
+  const [categorySlide] = useState(new Animated.Value(0));
+  const [levelSlide] = useState(new Animated.Value(0));
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -72,6 +76,25 @@ const TranslationGame = () => {
         sound.unloadAsync();
       }
     };
+  }, []);
+
+  useEffect(() => {
+    // Animate components on mount
+    Animated.parallel([
+      Animated.spring(categorySlide, {
+        toValue: 1,
+        tension: 50,
+        friction: 7,
+        useNativeDriver: true
+      }),
+      Animated.spring(levelSlide, {
+        toValue: 1,
+        tension: 50,
+        friction: 7,
+        delay: 200,
+        useNativeDriver: true
+      })
+    ]).start();
   }, []);
 
   const fetchSentence = async () => {
@@ -119,7 +142,7 @@ const TranslationGame = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAQvuS3bA_iGlXQ-Ev6ti2wL4uLmePJYBM', {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDiFlZbksAdPa7YwrnNHql3v-1DrsNMRrc', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -130,13 +153,15 @@ const TranslationGame = () => {
               text: `สำหรับประโยคภาษาไทย: "${generatedSentence}"
                       คำแปลภาษาอังกฤษของผู้ใช้: "${translation}"
 
-                    กรุณาตอบดังนี้:
-                     ให้เฉพาะคะแนนความถูกต้องเป็นตัวเลข 0-100 หรือ <=100 or >=0 ในบรรทัดแรก 
-                     ถ้าคะแนนน้อยกว่า 100 ให้อธิบายในภาษาไทย:
-                        - คำแปลที่ถูกต้อง
-                        - จุดที่แปลผิด
-                        - คำแนะนำในการปรับปรุง
-                        - โปรดเขียนคำอธิบายให้กระชับและเข้าใจง่ายและเว้นหนึ่งบรรทัด`
+                    กรุณาตอบเป็น JSON format ตามรูปแบบนี้:
+                    {
+                      "score": (คะแนนความถูกต้องเป็นตัวเลข 0-100),
+                      "correctTranslation": "คำแปลที่ถูกต้อง (ภาษาอังกฤษ)",
+                      "mistakes": "จุดที่แปลผิด (อธิบายไทย)",
+                      "suggestions": "คำแนะนำในการปรับปรุง (ภาษาไทย)"
+                    }
+                    
+                    โปรดตอบเป็น JSON format เท่านั้น ไม่มีข้อความอื่น`
                         
             }]
           }]
@@ -150,36 +175,83 @@ const TranslationGame = () => {
       const data = await response.json();
       const responseText = data.candidates[0]?.content?.parts[0]?.text || '';
       
-      // Extract accuracy and feedback from response
-      const [accuracyLine, ...feedbackLines] = responseText.split('\n').filter(line => line.trim());
-      const accuracyValue = parseInt(accuracyLine?.replace(/\D/g, ''), 10);
-      const feedbackText = feedbackLines.join('\n').trim();
+      try {
+        // Extract JSON from the response text
+        const jsonStartIndex = responseText.indexOf('{');
+        const jsonEndIndex = responseText.lastIndexOf('}') + 1;
+        const jsonString = responseText.substring(jsonStartIndex, jsonEndIndex);
+        const feedbackData = JSON.parse(jsonString);
+        
+        // Extract data from JSON
+        const accuracyValue = feedbackData.score;
+        const correctTranslation = feedbackData.correctTranslation;
+        const mistakes = feedbackData.mistakes;
+        const suggestions = feedbackData.suggestions;
+        
+        // Update state with feedback data
+        setAccuracy(accuracyValue);
+        setScore(prevScore => prevScore + accuracyValue);
+        setTotalQuestions(prevTotal => prevTotal + 1);
+        setRound(prevRound => prevRound + 1);
+        setHasSubmittedAnswer(true);
 
-      if (isNaN(accuracyValue)) {
-        throw new Error('Invalid accuracy value');
-      }
+        if (accuracyValue === 100) {
+          await playSuccessSound();
+          showModal(
+            '    ยอดเยี่ยม!🎉',
+            'คำแปลของคุณถูกต้อง 100%', 
+            () => {
+              resetFields();
+              fetchSentence();
+              fadeInNewSentence();
+            }
+          );
+        } else {
+          // Show enhanced modal for feedback
+          showEnhancedFeedbackModal(
+            accuracyValue,
+            correctTranslation,
+            mistakes,
+            suggestions,
+            () => {
+              resetFields();
+              fetchSentence();
+              fadeInNewSentence();
+            }
+          );
+        }
 
-      setAccuracy(accuracyValue);
-      setFeedback(feedbackText);
-      setScore(prevScore => prevScore + accuracyValue);
-      setTotalQuestions(prevTotal => prevTotal + 1);
-      setRound(prevRound => prevRound + 1);
-      setHasSubmittedAnswer(true); // Set to true after first submission
+        // Animate score display
+        Animated.sequence([
+          Animated.spring(scaleAnim, {
+            toValue: 1.2,
+            useNativeDriver: true,
+          }),
+          Animated.spring(scaleAnim, {
+            toValue: 1,
+            useNativeDriver: true,
+          })
+        ]).start();
+        
+      } catch (jsonError) {
+        console.error('Error parsing JSON feedback:', jsonError);
+        // Fallback to old method if JSON parsing fails
+        const [accuracyLine, ...feedbackLines] = responseText.split('\n').filter(line => line.trim());
+        const accuracyValue = parseInt(accuracyLine?.replace(/\D/g, ''), 10);
+        const feedbackText = feedbackLines.join('\n').trim();
 
-      if (accuracyValue === 100) {
-        await playSuccessSound();
+        if (isNaN(accuracyValue)) {
+          throw new Error('Invalid accuracy value');
+        }
+
+        setAccuracy(accuracyValue);
+        setScore(prevScore => prevScore + accuracyValue);
+        setTotalQuestions(prevTotal => prevTotal + 1);
+        setRound(prevRound => prevRound + 1);
+        setHasSubmittedAnswer(true);
+
         showModal(
-          '    ยอดเยี่ยม!🎉',  // Changed from Text component to string
-          'คำแปลของคุณถูกต้อง 100%', 
-          () => {
-            resetFields();
-            fetchSentence();
-            fadeInNewSentence();
-          }
-        );
-      } else {
-        showModal(
-          'ผลการแปล',  // Changed from Text component to string
+          'ผลการแปล',
           `ความแม่นยำ: ${accuracyValue}%\n\nคำแนะนำ:\n${feedbackText}`,
           () => {
             resetFields();
@@ -189,18 +261,6 @@ const TranslationGame = () => {
         );
       }
 
-      // Animate score display
-      Animated.sequence([
-        Animated.spring(scaleAnim, {
-          toValue: 1.2,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          useNativeDriver: true,
-        })
-      ]).start();
-
     } catch (error) {
       // If there's an error, re-enable the pickers
       setIsPickersDisabled(false);
@@ -209,6 +269,58 @@ const TranslationGame = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const showEnhancedFeedbackModal = (accuracy, correctTranslation, mistakes, suggestions, onClose) => {
+    const modalContent = (
+      <View style={styles.enhancedFeedbackContainer}>
+        {/* Score display */}
+        <View style={styles.feedbackScoreContainer}>
+          <View style={[
+            styles.feedbackScoreCircle, 
+            { 
+              backgroundColor: accuracy >= 80 ? '#8BC34A' : 
+                               accuracy >= 60 ? '#FFC107' : '#FF5722' 
+            }
+          ]}>
+            <Text style={styles.feedbackScoreText}>{accuracy}%</Text>
+          </View>
+          <Text style={styles.feedbackScoreLabel}>คะแนน</Text>
+        </View>
+        
+        {/* Correct translation section */}
+        <View style={styles.feedbackSection}>
+          <View style={styles.feedbackSectionHeader}>
+            <FontAwesome5 name="check-circle" size={18} color="#4CAF50" />
+            <Text style={styles.feedbackSectionTitle}>คำแปลที่ถูกต้อง</Text>
+          </View>
+          <Text style={styles.feedbackCorrectTranslation}>{correctTranslation}</Text>
+        </View>
+        
+        {/* Mistakes section */}
+        <View style={styles.feedbackSection}>
+          <View style={styles.feedbackSectionHeader}>
+            <FontAwesome5 name="exclamation-circle" size={18} color="#FF5722" />
+            <Text style={styles.feedbackSectionTitle}>จุดที่แปลผิด</Text>
+          </View>
+          <Text style={styles.feedbackText}>{mistakes}</Text>
+        </View>
+        
+        {/* Suggestions section */}
+        <View style={styles.feedbackSection}>
+          <View style={styles.feedbackSectionHeader}>
+            <FontAwesome5 name="lightbulb" size={18} color="#FFC107" />
+            <Text style={styles.feedbackSectionTitle}>คำแนะนำ</Text>
+          </View>
+          <Text style={styles.feedbackText}>{suggestions}</Text>
+        </View>
+      </View>
+    );
+
+    setModalTitle('ผลการแปล');
+    setModalMessage(modalContent);
+    setModalAction(onClose);
+    setModalVisible(true);
   };
 
   const fadeInNewSentence = () => {
@@ -308,6 +420,165 @@ const TranslationGame = () => {
     }
   };
 
+  const animateButton = () => {
+    Animated.sequence([
+      Animated.timing(buttonScale, {
+        toValue: 0.95,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+      Animated.timing(buttonScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      })
+    ]).start();
+  };
+
+  const renderHowToPlay = () => (
+    <Modal
+      animationType="fade"
+      transparent={true}
+      visible={howToPlayVisible}
+      onRequestClose={() => setHowToPlayVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.howToPlayModal}>
+         
+          <ScrollView style={styles.howToPlayContent}>
+            {['เลือกหมวดหมู่และระดับความยาก',
+              'แปลประโยคจาก Mission',
+              'กดปุ่ม Submit ตรวจสอบคำตอบ',
+              'รับคะแนนและคำแนะนำ',
+              'เล่นต่อเพื่อพัฒนาทักษะการแปล'
+            ].map((instruction, index) => (
+              <View key={index} style={styles.instructionItem}>
+                <Text style={styles.instructionNumber}>{index + 1}</Text>
+                <Text style={styles.instructionText}>{instruction}</Text>
+              </View>
+            ))}
+          </ScrollView>
+          <TouchableOpacity 
+            style={styles.closeHowToPlay}
+            onPress={() => setHowToPlayVisible(false)}
+          >
+            <FontAwesome5 name="check-circle" size={20} color="#FFF" />
+            <Text style={styles.closeButtonText}>เข้าใจแล้ว</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderSelectionSection = () => (
+    <View style={styles.selectionContainer}>
+      <Animated.View style={[
+        styles.selectionBox,
+        {
+          transform: [
+            {
+              translateX: categorySlide.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-300, 0]
+              })
+            }
+          ]
+        }
+      ]}>
+        <View style={styles.selectionHeader}>
+          <FontAwesome5 name="bookmark" size={20} color="#85603F" />
+          <Text style={styles.selectionTitle}>Category</Text>
+        </View>
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={category}
+            style={[styles.enhancedPicker, isPickersDisabled && styles.disabledPicker]}
+            onValueChange={handleCategoryChange}
+            enabled={!isPickersDisabled}
+            itemStyle={styles.pickerItem}
+          >
+            {conversationCategories.map(cat => (
+              <Picker.Item 
+                key={cat} 
+                label={cat} 
+                value={cat} 
+                color={isPickersDisabled ? "#999" : "#85603F"} 
+              />
+            ))}
+          </Picker>
+        </View>
+      </Animated.View>
+
+      <Animated.View style={[
+        styles.selectionBox,
+        {
+          transform: [
+            {
+              translateX: levelSlide.interpolate({
+                inputRange: [0, 1],
+                outputRange: [300, 0]
+              })
+            }
+          ]
+        }
+      ]}>
+        <View style={styles.selectionHeader}>
+          <FontAwesome5 name="signal" size={20} color="#85603F" />
+          <Text style={styles.selectionTitle}>Level</Text>
+        </View>
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={difficulty}
+            style={[styles.enhancedPicker, isPickersDisabled && styles.disabledPicker]}
+            onValueChange={setDifficulty}
+            enabled={!isPickersDisabled}
+            itemStyle={styles.pickerItem}
+          >
+            {difficultyLevels.map(level => (
+              <Picker.Item 
+                key={level} 
+                label={level} 
+                value={level} 
+                color={isPickersDisabled ? "#999" : "#85603F"} 
+              />
+            ))}
+          </Picker>
+        </View>
+      </Animated.View>
+    </View>
+  );
+
+  const renderSubmitButton = () => (
+    <TouchableOpacity 
+      style={[
+        styles.button,
+        isLoading && styles.disabledButton,
+      ]}
+      onPress={() => {
+        Animated.sequence([
+          Animated.timing(buttonScale, {
+            toValue: 0.95,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(buttonScale, {
+            toValue: 1,
+            duration: 100,
+            useNativeDriver: true,
+          })
+        ]).start();
+        checkTranslation();
+      }}
+      disabled={isLoading}
+    >
+      <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+        <Text style={styles.buttonText}>
+          {isLoading ? 'Loading...' : 'Submit'}
+        </Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.mainContainer}>
@@ -315,6 +586,8 @@ const TranslationGame = () => {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          
+
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <FontAwesome5 name="layer-group" size={20} color="#FFD700" />
@@ -326,37 +599,7 @@ const TranslationGame = () => {
             </View>
           </View>
 
-          <View style={styles.categoryContainer}>
-            <Text style={styles.label}>Category:</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={category}
-                style={[styles.picker, isPickersDisabled && styles.disabledPicker]}
-                onValueChange={handleCategoryChange}
-                enabled={!isPickersDisabled}
-              >
-                {conversationCategories.map(cat => (
-                  <Picker.Item key={cat} label={cat} value={cat} color={isPickersDisabled ? "#999" : "#333"} />
-                ))}
-              </Picker>
-            </View>
-          </View>
-
-          <View style={styles.categoryContainer}>
-            <Text style={styles.label}>Level:</Text>
-            <View style={styles.pickerContainer}>
-              <Picker
-                selectedValue={difficulty}
-                style={[styles.picker, isPickersDisabled && styles.disabledPicker]}
-                onValueChange={setDifficulty}
-                enabled={!isPickersDisabled}
-              >
-                {difficultyLevels.map(level => (
-                  <Picker.Item key={level} label={level} value={level} color={isPickersDisabled ? "#999" : "#333"} />
-                ))}
-              </Picker>
-            </View>
-          </View>
+          {renderSelectionSection()}
 
           <Animated.View style={[styles.sentenceContainer, { opacity: fadeAnim }]}>
             <View style={styles.sentenceHeaderContainer}>
@@ -374,24 +617,22 @@ const TranslationGame = () => {
             <Text style={styles.sentence}>{sentence}</Text>
           </Animated.View>
 
-          <TextInput
-            style={styles.input}
-            value={translation}
-            onChangeText={handleTranslationInput}
-            placeholder="Enter English translation here."
-            placeholderTextColor="#666"
-            multiline
-          />
+          <View style={styles.translationContainer}>
+            <View style={styles.translationHeader}>
+              <FontAwesome5 name="keyboard" size={20} color="#85603F" />
+              <Text style={styles.translationTitle}>Your Translation</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              value={translation}
+              onChangeText={handleTranslationInput}
+              placeholder="Enter English translation here..."
+              placeholderTextColor="#666"
+              multiline
+            />
+          </View>
           
-          <TouchableOpacity 
-            style={[styles.button, isLoading && styles.disabledButton]} 
-            onPress={checkTranslation}
-            disabled={isLoading}
-          >
-            <Text style={styles.buttonText}>
-              {isLoading ? 'Loading...' : 'Submit'}
-            </Text>
-          </TouchableOpacity>
+          {renderSubmitButton()}
 
           {hasSubmittedAnswer && (
             <TouchableOpacity 
@@ -490,6 +731,8 @@ const TranslationGame = () => {
           </View>
         </View>
       </Modal>
+
+      {renderHowToPlay()}
     </View>
   );
 };
@@ -596,6 +839,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 3.84,
+    minWidth: '100%', // Add this to ensure button width
   },
   disabledButton: {
     backgroundColor: '#B69B7D',
@@ -611,6 +855,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+    textAlign: 'center', // Add this to ensure text centering
   },
   scoreContainer: {
     flexDirection: 'row',
@@ -992,7 +1237,243 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 6,
   },
+  howToPlayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: '#DBC8AC',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    marginBottom: 15,
+    elevation: 3,
+  },
+  howToPlayButtonText: {
+    color: '#85603F',
+    fontWeight: 'bold',
+    marginLeft: 8,
+    fontSize: 16,
+  },
+  howToPlayModal: {
+    backgroundColor: '#F8EDE3',
+    borderRadius: 25,
+    padding: 25,
+    width: '85%',
+    maxHeight: '80%',
+    elevation: 5,
+  },
+  howToPlayTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#85603F',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  howToPlayContent: {
+    maxHeight: 300,
+  },
+  instructionText: {
+    fontSize: 16,
+    color: '#594433',
+    marginBottom: 15,
+    lineHeight: 24,
+  },
+  closeHowToPlay: {
+    backgroundColor: '#85603F',
+    padding: 15,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  closeButtonText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 15,
+  },
+  howToPlayHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  instructionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 15,
+    borderRadius: 15,
+    marginBottom: 10,
+    elevation: 2,
+  },
+  translationContainer: {
+    marginBottom: 20,
+  },
+  translationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  translationTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#85603F',
+    marginLeft: 10,
+  },
+  input: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    color: '#333',
+    padding: 20,
+    borderRadius: 15,
+    fontSize: 18,
+    minHeight: 120,
+    textAlignVertical: 'top',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    borderWidth: 1,
+    borderColor: '#DBC8AC',
+  },
+  closeHowToPlay: {
+    flexDirection: 'row',
+    backgroundColor: '#85603F',
+    padding: 15,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  closeButtonText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  instructionNumber: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#85603F',
+    backgroundColor: '#DBC8AC',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    textAlign: 'center',
+    lineHeight: 30,
+    marginRight: 15,
+  },
+  selectionContainer: {
+    marginBottom: 20,
+  },
+  selectionBox: {
+    backgroundColor: '#FFF',
+    borderRadius: 15,
+    marginBottom: 15,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    borderWidth: 1,
+    borderColor: '#DBC8AC',
+  },
+  selectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#DBC8AC',
+  },
+  selectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#85603F',
+    marginLeft: 10,
+  },
+  pickerWrapper: {
+    backgroundColor: 'rgba(219, 200, 172, 0.1)',
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 15,
+  },
+  enhancedPicker: {
+    height: 50,
+    color: '#85603F',
+  },
+  pickerItem: {
+    fontSize: 16,
+    height: 50,
+  },
+  disabledPicker: {
+    opacity: 0.5,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  enhancedFeedbackContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  feedbackScoreContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  feedbackScoreCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 5,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  feedbackScoreText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  feedbackScoreLabel: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: 'bold',
+  },
+  feedbackSection: {
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    width: '100%',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 2.22,
+  },
+  feedbackSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  feedbackSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#594433',
+    marginLeft: 8,
+  },
+  feedbackCorrectTranslation: {
+    fontSize: 16,
+    color: '#4CAF50',
+    fontWeight: '500',
+  },
+  feedbackText: {
+    fontSize: 15,
+    color: '#594433',
+    lineHeight: 22,
+  },
 });
-
 
 export default TranslationGame;

@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { SafeAreaView, View, Image, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, StatusBar } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { SafeAreaView, View, Image, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
 import Animated, { Easing, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { auth, db } from '../config/firebase'; // Import Firebase auth and db
 import { sendPasswordResetEmail } from 'firebase/auth'; // Import the password reset function
 import { collection, query, where, getDocs } from 'firebase/firestore'; // Import for querying user data
+import FlashMessage, { showMessage } from 'react-native-flash-message'; // Import for better alerts
 
 const ForgotPassword = ({}) => {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1); // Add state setter for step
+  const flashMessageRef = useRef(null);
 
   const fadeInValue = useSharedValue(50);
   const slideUpValue = useSharedValue(100);
@@ -35,7 +37,13 @@ const ForgotPassword = ({}) => {
 
   const handleSendCode = async () => {
     if (!email) {
-      Alert.alert('Alert', 'Please enter your email');
+      flashMessageRef.current.showMessage({
+        message: "Alert",
+        description: "Please enter your email",
+        type: "warning",
+        duration: 3000,
+        icon: "warning",
+      });
       return;
     }
     
@@ -49,7 +57,13 @@ const ForgotPassword = ({}) => {
       
       if (querySnapshot.empty) {
         // No user found with this email
-        Alert.alert("Error", "No account exists with this email address.");
+        flashMessageRef.current.showMessage({
+          message: "Error",
+          description: "No account exists with this email address.",
+          type: "danger",
+          duration: 3000,
+          icon: "danger",
+        });
         setIsLoading(false);
         return;
       }
@@ -61,13 +75,13 @@ const ForgotPassword = ({}) => {
       
       // Check if email is verified (if your app requires verification before password reset)
       if (userData && userData.hasOwnProperty('emailVerified') && !userData.emailVerified) {
-        Alert.alert(
-          "Email Not Verified", 
-          "Please verify your email first by clicking on the verification link sent during registration.",
-          [
-            { text: "OK" }
-          ]
-        );
+        flashMessageRef.current.showMessage({
+          message: "Email Not Verified",
+          description: "Please verify your email first by clicking on the verification link sent during registration.",
+          type: "info",
+          duration: 4000,
+          icon: "info",
+        });
         setIsLoading(false);
         return;
       }
@@ -77,10 +91,15 @@ const ForgotPassword = ({}) => {
       
       // If successful, move to step 2
       setStep(2);
-      Alert.alert(
-        "Email Sent",
-        "Password reset link has been sent to your email address. Please check your inbox and spam folder."
-      );
+      flashMessageRef.current.showMessage({
+        message: "Email Sent",
+        description: "Password reset link has been sent to your email address. Please check your inbox and spam folder.",
+        type: "success",
+        duration: 4000,
+        icon: "success",
+        backgroundColor: "green", // Match with your theme color
+        color: "#FFFF", // Text color
+      });
     } catch (error) {
       console.error("Password reset error:", error);
       
@@ -102,7 +121,13 @@ const ForgotPassword = ({}) => {
           break;
       }
       
-      Alert.alert("Error", errorMessage);
+      flashMessageRef.current.showMessage({
+        message: "Error",
+        description: errorMessage,
+        type: "danger",
+        duration: 3000,
+        icon: "danger",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -153,7 +178,7 @@ const ForgotPassword = ({}) => {
       <StatusBar hidden />
       <Animated.View style={[{ flex: 1 }, animatedStyle]}>
         <View style={styles.view}>
-          <Image source={require('../assets/elic.jpg')} resizeMode="stretch" style={styles.image2} />
+          <Image source={require('../assets/elic.png')} resizeMode="stretch" style={styles.image2} />
         </View>
 
         <View style={styles.view2}>
@@ -181,6 +206,7 @@ const ForgotPassword = ({}) => {
           </View>
         </View>
       </Animated.View>
+      <FlashMessage position="top" ref={flashMessageRef} floating={true} style={styles.flashMessage} />
     </SafeAreaView>
   );
 };
@@ -379,6 +405,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  flashMessage: {
+    zIndex: 9999,
+    elevation: 9999,
   },
 });
 

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { SafeAreaView, View, ScrollView, Image, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, StatusBar } from 'react-native';
+import { SafeAreaView, View, ScrollView, Image, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
 import Animated, { Easing, useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { useNavigation } from '@react-navigation/native';
 import { signInWithEmailAndPassword, reload } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import FlashMessage, { showMessage } from 'react-native-flash-message';
 
 const LoginApp = () => {
   const navigation = useNavigation();
@@ -91,13 +92,25 @@ const LoginApp = () => {
     try {
       // ตรวจสอบข้อมูล
       if (!email || !password) {
-        Alert.alert('Alert', 'Please enter your email and password');
+        showMessage({
+          message: "Opp!",
+          description: "Please enter your email and password",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
         setIsLoading(false);
         return;
-        }
+      }
         
-        if (!validateEmail(email)) {
-        Alert.alert('Alert', 'Invalid email format');
+      if (!validateEmail(email)) {
+        showMessage({
+          message: "Opp!",
+          description: "Invalid email format",
+          type: "warning",
+          duration: 3000,
+          icon: "warning",
+        });
         setIsLoading(false);
         return;
       }
@@ -109,14 +122,14 @@ const LoginApp = () => {
       // ตรวจสอบสถานะการยืนยันอีเมล - force reload user data to get latest verification status
       await reload(user);
       if (!user.emailVerified) {
-        Alert.alert(
-          'Email not verified',
-          'Please verify your email before logging in by clicking the link sent to your email',
-          [
-            
-            { text: 'Ok', style: 'cancel' }
-          ]
-        );
+        showMessage({
+          message: "Email not verified",
+          description: "Please verify your email before logging in by clicking the link sent to your email",
+          type: "info",
+          duration: 4000,
+          icon: "info",
+          backgroundColor: "#3498db",
+        });
         // Sign out to prevent partial authentication
         await auth.signOut();
         setIsLoading(false);
@@ -151,7 +164,14 @@ const LoginApp = () => {
         }
       } catch (error) {
         console.error('Error updating user data:', error);
-        Alert.alert('Please try again.', 'There was an error while logging');
+        showMessage({
+          message: "Error",
+          description: "There was an error while logging in. Please try again.",
+          type: "danger",
+          duration: 3000,
+          icon: "danger",
+          backgroundColor: "#FF0000",
+        });
       }
 
     } catch (error) {
@@ -179,7 +199,14 @@ const LoginApp = () => {
         break;
     }
 
-    Alert.alert('Please try again', errorMessage);
+    showMessage({
+      message: "Opp!",
+      description: errorMessage,
+      type: "danger",
+      duration: 5000,
+      icon: "danger",
+      backgroundColor: "#FF0000",
+    });
   };
 
   return (
@@ -194,7 +221,7 @@ const LoginApp = () => {
       >
         <Animated.View style={[{ flex: 1 }, animatedStyle]}>
           <View style={styles.view}>
-            <Image source={require('../assets/elic.jpg')} resizeMode="stretch" style={styles.image2} />
+            <Image source={require('../assets/elic.png')} resizeMode="stretch" style={styles.image2} />
           </View>
 
           <View style={styles.view2}>
@@ -269,6 +296,7 @@ const LoginApp = () => {
           </View>
         </Animated.View>
       </ScrollView>
+      <FlashMessage position="top" />
     </SafeAreaView>
   );
 };

@@ -8,6 +8,7 @@ import ProfileScreen from './profile.js';
 import { Keyboard } from 'react-native';
 import getRolePrompt from './option/getRolePrompt';
 import { CHATBOT_ROLES } from './option/Settings';
+import * as Speech from 'expo-speech';  // For fallback
 
 const GridLoader = () => {
   const [animation] = useState(new Animated.Value(0));
@@ -55,22 +56,193 @@ const GridLoader = () => {
   );
 };
 
-const LoadingDots = () => {
-  const [dots, setDots] = useState('');
+const ChatBubbleLoader = () => {
+  const [dot1] = useState(new Animated.Value(0));
+  const [dot2] = useState(new Animated.Value(0));
+  const [dot3] = useState(new Animated.Value(0));
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDots(prev => prev.length >= 3 ? '' : prev + '.');
-    }, 500);
-    return () => clearInterval(interval);
+    const animateDot = (dot, delay) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(dot, {
+            toValue: 1,
+            duration: 400,
+            delay,
+            useNativeDriver: true,
+            easing: Easing.ease
+          }),
+          Animated.timing(dot, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+            easing: Easing.ease
+          })
+        ])
+      ).start();
+    };
+
+    animateDot(dot1, 0);
+    animateDot(dot2, 200);
+    animateDot(dot3, 400);
+
+    return () => {
+      // Cleanup animation when component unmounts
+      dot1.setValue(0);
+      dot2.setValue(0);
+      dot3.setValue(0);
+    };
   }, []);
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <MaterialIcons name="translate" size={16} color="white" />
-      <Text style={{ color: 'white', fontSize: 12, marginLeft: 4 }}>
-        Loading{dots}
-      </Text>
+    <View style={styles.chatBubbleLoaderContainer}>
+      <Animated.View 
+        style={[
+          styles.chatBubbleDot,
+          {
+            opacity: dot1.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.3, 1]
+            }),
+            transform: [{
+              scale: dot1.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.8, 1]
+              })
+            }]
+          }
+        ]}
+      />
+      <Animated.View 
+        style={[
+          styles.chatBubbleDot,
+          {
+            opacity: dot2.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.3, 1]
+            }),
+            transform: [{
+              scale: dot2.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.8, 1]
+              })
+            }]
+          }
+        ]}
+      />
+      <Animated.View 
+        style={[
+          styles.chatBubbleDot,
+          {
+            opacity: dot3.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.3, 1]
+            }),
+            transform: [{
+              scale: dot3.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.8, 1]
+              })
+            }]
+          }
+        ]}
+      />
+    </View>
+  );
+};
+
+// Add a new component for typing indicator in AI chat bubbles
+const ChatTypingIndicator = () => {
+  // Use the same animation logic as ChatBubbleLoader but adjust styling for chat messages
+  const [dot1] = useState(new Animated.Value(0));
+  const [dot2] = useState(new Animated.Value(0));
+  const [dot3] = useState(new Animated.Value(0));
+
+  useEffect(() => {
+    const animateDot = (dot, delay) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(dot, {
+            toValue: 1,
+            duration: 400,
+            delay,
+            useNativeDriver: true,
+            easing: Easing.ease
+          }),
+          Animated.timing(dot, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+            easing: Easing.ease
+          })
+        ])
+      ).start();
+    };
+
+    animateDot(dot1, 0);
+    animateDot(dot2, 200);
+    animateDot(dot3, 400);
+
+    return () => {
+      dot1.setValue(0);
+      dot2.setValue(0);
+      dot3.setValue(0);
+    };
+  }, []);
+
+  return (
+    <View style={styles.typingIndicatorContainer}>
+      <Animated.View 
+        style={[
+          styles.typingDot,
+          {
+            opacity: dot1.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.3, 1]
+            }),
+            transform: [{
+              translateY: dot1.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -5]
+              })
+            }]
+          }
+        ]}
+      />
+      <Animated.View 
+        style={[
+          styles.typingDot,
+          {
+            opacity: dot2.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.3, 1]
+            }),
+            transform: [{
+              translateY: dot2.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -5]
+              })
+            }]
+          }
+        ]}
+      />
+      <Animated.View 
+        style={[
+          styles.typingDot,
+          {
+            opacity: dot3.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.3, 1]
+            }),
+            transform: [{
+              translateY: dot3.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -5]
+              })
+            }]
+          }
+        ]}
+      />
     </View>
   );
 };
@@ -130,65 +302,77 @@ const SpellingCorrection = ({ correction }) => {
   
   // Check if we have errors array or direct original/corrected properties
   const hasErrorsArray = correction.errors && Array.isArray(correction.errors) && correction.errors.length > 0;
-  const hasDirectProperties = correction.original && correction.corrected;
+  const hasDirectProperties = correction.original && correction.corrected && 
+                             correction.original !== correction.corrected;
   
-  if (!hasErrorsArray && !hasDirectProperties) {
-    console.log("No valid correction format found");
-    return null;
-  }
+  // Check if we have actual spelling/grammar errors
+  const hasActualErrors = hasErrorsArray || hasDirectProperties;
+  
+  // Check if we have a better phrase suggestion
+  const hasBetterPhrase = correction.betterPhrase && correction.betterPhrase.trim() !== "";
+  
+  // If no errors but has better phrase, show only the better phrase section
+  const showOnlyBetterPhrase = !hasActualErrors && hasBetterPhrase;
   
   return (
     <View style={styles.spellingCorrectionContainer}>
-      <View style={styles.spellingHeaderRow}>
-        <FontAwesome5 name="spell-check" size={14} color="#8D493A" />
-        <Text style={styles.spellingHeaderText}>English Correction</Text>
-      </View>
-      
-      {/* Show individual word corrections if available */}
-      {hasErrorsArray && (
-        <View style={styles.correctionsSection}>
-          {correction.errors.map((error, index) => (
-            <View key={index} style={styles.spellingItem}>
+      {!showOnlyBetterPhrase && (
+        <>
+          <View style={styles.spellingHeaderRow}>
+            <FontAwesome5 name="spell-check" size={14} color="#8D493A" />
+            <Text style={styles.spellingHeaderText}>English Correction</Text>
+          </View>
+          
+          {/* Show individual word corrections if available */}
+          {hasErrorsArray && (
+            <View style={styles.correctionsSection}>
+              {correction.errors.map((error, index) => (
+                <View key={index} style={styles.spellingItem}>
+                  <View style={styles.spellingContentRow}>
+                    <Text style={styles.spellingLabel}>Original:</Text>
+                    <Text style={styles.spellingIncorrect}>{error.original}</Text>
+                  </View>
+                  
+                  <View style={styles.spellingContentRow}>
+                    <Text style={styles.spellingLabel}>Correct:</Text>
+                    <Text style={styles.spellingCorrect}>{error.corrected}</Text>
+                  </View>
+                  
+                  {error.explanation && (
+                    <Text style={styles.errorExplanation}>{error.explanation}</Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+          
+          {/* For backward compatibility with the old format */}
+          {hasDirectProperties && !hasErrorsArray && (
+            <View style={styles.spellingItem}>
               <View style={styles.spellingContentRow}>
                 <Text style={styles.spellingLabel}>Original:</Text>
-                <Text style={styles.spellingIncorrect}>{error.original}</Text>
+                <Text style={styles.spellingIncorrect}>{correction.original}</Text>
               </View>
               
               <View style={styles.spellingContentRow}>
                 <Text style={styles.spellingLabel}>Correct:</Text>
-                <Text style={styles.spellingCorrect}>{error.corrected}</Text>
+                <Text style={styles.spellingCorrect}>{correction.corrected}</Text>
               </View>
               
-              {error.explanation && (
-                <Text style={styles.errorExplanation}>{error.explanation}</Text>
+              {correction.explanation && (
+                <Text style={styles.errorExplanation}>{correction.explanation}</Text>
               )}
             </View>
-          ))}
-        </View>
-      )}
-      
-      {/* For backward compatibility with the old format */}
-      {hasDirectProperties && !hasErrorsArray && (
-        <View style={styles.spellingItem}>
-          <View style={styles.spellingContentRow}>
-            <Text style={styles.spellingLabel}>Original:</Text>
-            <Text style={styles.spellingIncorrect}>{correction.original}</Text>
-          </View>
-          
-          <View style={styles.spellingContentRow}>
-            <Text style={styles.spellingLabel}>Correct:</Text>
-            <Text style={styles.spellingCorrect}>{correction.corrected}</Text>
-          </View>
-          
-          {correction.explanation && (
-            <Text style={styles.errorExplanation}>{correction.explanation}</Text>
           )}
-        </View>
+        </>
       )}
       
       {/* Better phrase suggestion section */}
-      {correction.betterPhrase && correction.betterPhrase.trim() !== "" && (
-        <View style={styles.betterPhraseSection}>
+      {hasBetterPhrase && (
+        <View style={[
+          styles.betterPhraseSection,
+          showOnlyBetterPhrase && styles.betterPhraseOnly
+        ]}>
           <View style={styles.betterPhraseHeaderRow}>
             <FontAwesome5 name="lightbulb" size={14} color="#8D493A" />
             <Text style={styles.betterPhraseHeaderText}>Better Expression</Text>
@@ -211,6 +395,8 @@ const ChatScreen = () => {
   const [translationModalVisible, setTranslationModalVisible] = useState(false);
   const [translatedText, setTranslatedText] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [currentSpeakingId, setCurrentSpeakingId] = useState(null);
   const scrollViewRef = useRef(null);
 
   const games = [
@@ -235,10 +421,115 @@ const ChatScreen = () => {
       }, 100);
     }
   }, [chatHistory]);
-
+  // Enhanced formatChatHistory with better context structuring
   const formatChatHistory = (history) => {
-    return history.map(msg => `${msg.isUser ? 'User' : 'Elic'}: ${msg.text}`).join('\n');
+    // Filter out non-text messages like vocabulary and spelling corrections
+    const textHistory = history.filter(msg => msg.text);
+    
+    // Format each message with role and timestamp details
+    const formattedMessages = textHistory.map(msg => {
+      const role = msg.isUser ? 'User' : 'Elic';
+      const timestamp = msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString();
+      return `${role} [${timestamp}]: ${msg.text}`;
+    }).join('\n\n');
+    
+    return formattedMessages;
   };
+  
+  // Add summarization for long conversations
+  const summarizeConversation = (history, maxTokenLength = 3000) => {
+    const fullHistory = formatChatHistory(history);
+    
+    // If conversation is short enough, return the full history
+    if (fullHistory.length <= maxTokenLength) {
+      return fullHistory;
+    }
+    
+    // For long conversations, keep recent messages intact and summarize older ones
+    const recentMessages = history.slice(-8); // Keep last 8 messages fully intact
+    const olderMessages = history.slice(0, -8); // These will be summarized
+    
+    // Format recent messages normally
+    const recentFormattedMessages = formatChatHistory(recentMessages);
+    
+    // Create a summary of older messages by keeping only key points
+    // For simplicity, we'll just keep the topic indicators from user messages
+    const summaryPoints = olderMessages
+      .filter(msg => msg.isUser && msg.text)
+      .map(msg => {
+        // Extract the first sentence or up to 100 characters as a topic indicator
+        const topic = msg.text.split('.')[0].trim();
+        return topic.length > 100 ? topic.substring(0, 100) + '...' : topic;
+      })
+      .slice(-5); // Keep only the 5 most recent topics for context
+    
+    const summary = "Earlier conversation summary:\n- " + 
+      summaryPoints.join('\n- ') + 
+      `\n\n(${olderMessages.length} earlier messages summarized)\n\n`;
+      
+    return summary + "Recent conversation:\n" + recentFormattedMessages;
+  };
+
+  // Extract key topics from conversation history to maintain context awareness
+  const extractConversationTopics = (history) => {
+    if (!history || history.length < 3) return ""; // Not enough history to extract topics
+    
+    // Only consider user messages for topic extraction
+    const userMessages = history
+      .filter(msg => msg.isUser && msg.text)
+      .map(msg => msg.text)
+      .slice(-10); // Consider only the last 10 user messages
+    
+    if (userMessages.length === 0) return "";
+    
+    // Common English filler words to filter out when identifying topics
+    const fillerWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'about', 'is', 'are', 'was', 'were', 'have', 'has', 'had'];
+    
+    // Simple keyword extraction - collect non-filler words and find most common ones
+    const keywords = {};
+    userMessages.forEach(message => {
+      const words = message.toLowerCase().split(/\s+/);
+      words.forEach(word => {
+        // Keep only words with 3+ chars and not in filler list
+        if (word.length >= 3 && !fillerWords.includes(word)) {
+          keywords[word] = (keywords[word] || 0) + 1;
+        }
+      });
+    });
+    
+    // Get top keywords (sorted by frequency)
+    const topKeywords = Object.entries(keywords)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(entry => entry[0]);
+    
+    return topKeywords.length > 0 ? topKeywords.join(', ') : "";
+  };
+
+  // Extract keywords from a message for topic tracking
+  const extractKeywords = (message) => {
+    if (!message || typeof message !== 'string' || message.trim() === '') {
+      return [];
+    }
+    
+    // Common English filler words to filter out
+    const fillerWords = [
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
+      'with', 'about', 'is', 'are', 'was', 'were', 'have', 'has', 'had', 
+      'this', 'that', 'these', 'those', 'my', 'your', 'his', 'her', 'their', 
+      'our', 'its', 'i', 'you', 'he', 'she', 'we', 'they', 'them', 'me',
+      'as', 'of', 'be', 'by', 'so', 'if', 'do', 'can', 'will', 'would',
+      'should', 'could', 'yes', 'no', 'not', 'very', 'too', 'just', 'now'
+    ];
+    
+    // Extract words, filter out non-alphanumeric chars, and filter out short words and filler words
+    return message.toLowerCase()
+      .split(/\s+/)
+      .map(word => word.replace(/[^\w\s]/g, '').trim())
+      .filter(word => word.length > 3 && !fillerWords.includes(word))
+      .slice(0, 5); // Take up to 5 keywords per message
+  };
+  // We use summarizeConversation for context building and manageConversationHistory for storage efficiency
 
   const sendInitialGreeting = async () => {
     setGeneratingAnswer(true);
@@ -255,7 +546,7 @@ const ChatScreen = () => {
       const parts = !chatbotRole ? getDefaultPrompt() : trainerPrompts;
 
       const response = await axios({
-        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAQvuS3bA_iGlXQ-Ev6ti2wL4uLmePJYBM`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDiFlZbksAdPa7YwrnNHql3v-1DrsNMRrc`,
         method: "post",
         data: {
           contents: [{
@@ -299,30 +590,56 @@ const ChatScreen = () => {
       setDifficulty(newDifficulty);
     }
   };
-
   const generateResponse = async (userMessage) => {
     try {
-      const conversationHistory = formatChatHistory(chatHistory);
+      // Use improved context management with summarization for long conversations
+      const conversationHistory = summarizeConversation(chatHistory);
+      
+      // Extract recent interactions to highlight in the prompt
+      const recentMessages = chatHistory.slice(-4);
+      const recentContext = recentMessages.length > 0 
+        ? "Most recent exchanges:\n" + formatChatHistory(recentMessages)
+        : "";
       
       // Check if the message is primarily in Thai
       const thaiCharCount = (userMessage.match(/[\u0E00-\u0E7F]/g) || []).length;
       const isMainlyThai = thaiCharCount > userMessage.length * 0.3; // If 30% or more characters are Thai
       
       // Expanded check for vocabulary request in both Thai and English
-      const thaiVocabPhrases = ["คำศัพท์", "ศัพท์", "วงศัพท์", "เรียนรู้คำศัพท์"];
-      const englishVocabPhrases = ["vocabulary", "words", "vocab"];
+      const thaiVocabPhrases = ["คำศัพท์", "วงศัพท์", "เรียนรู้คำศัพท์"];
+      const englishVocabPhrases = ["vocabulary", "vocab"];                                                     
       
       const isVocabularyRequest = 
         thaiVocabPhrases.some(phrase => userMessage.toLowerCase().includes(phrase)) ||
         englishVocabPhrases.some(phrase => userMessage.toLowerCase().includes(phrase));
       
+      // Track important conversation topics for better context retention
+      const conversationTopics = extractConversationTopics(chatHistory);
+      
+      // Enhanced prompt structure with better context management      // Enhanced context-aware prompt structure
       const parts = [
+        // Core identity and role instructions
         { text: getRolePrompt(chatbotRole) },
-        { text: 'Answer only according to the personality, characteristics and scope of the given role. Use role-appropriate language, such as jargon or appropriate expressions.' },
-        { text: "Previous conversation:\n" + conversationHistory },
-        { text: `Difficulty level: ${difficulty}` },
-        { text: "Stay in character and keep responses brief." },
-        { text: "Maximum 4 sentences per response." }
+        { text: 'You are an AI English language trainer named Elic. Your goal is to help users practice and improve their English through natural conversation.' },
+        { text: 'Answer according to the personality, characteristics and scope of the given role. Use role-appropriate language, such as jargon or appropriate expressions.' },
+        
+        // Memory management instructions
+        { text: "IMPORTANT MEMORY INSTRUCTIONS: You have perfect recall of the entire conversation history. Reference specific details from earlier in the conversation when relevant. If the user refers to something mentioned earlier, acknowledge it explicitly." },
+        
+        // Conversation context in different formats
+        { text: "CONVERSATION HISTORY:\n" + conversationHistory },
+        { text: recentContext }, // Highlight recent context for better continuity
+        
+        // Important context cues for better memory
+        { text: conversationTopics ? `KEY TOPICS DISCUSSED: ${conversationTopics}` : "" },
+        { text: `DIFFICULTY LEVEL: ${difficulty}` },
+        
+        // Personality and style guidance
+        { text: "Stay in character as defined by your role. Keep responses brief but meaningful." },
+        { text: "Maximum 4 sentences per response." },
+        
+        // Specific memory trigger for current exchange
+        { text: "BEFORE RESPONDING: Review the conversation history for any details, preferences, or topics the user has mentioned before that are relevant to this exchange." }
       ];
       
       // Add format instructions if this is a vocabulary request
@@ -346,17 +663,26 @@ const ChatScreen = () => {
           - If the user's message is in Thai, focus on vocabulary words related to the Thai topic mentioned.
           - Always write examples in English regardless of the user's input language.`
         });
-      } else {
-        // Modified instructions for message responses with spelling correction - English only
+      } else {        // Enhanced instructions for comprehensive grammar correction - English only
         parts.push({
-          text: `Check if the user's message has any SERIOUS spelling, grammar, or usage errors IN ENGLISH WORDS ONLY. 
+          text: `Check if the user's message has any errors in the following categories IN ENGLISH WORDS ONLY: 
+          1. Spelling mistakes
+          2. Subject-verb agreement (singular subjects need singular verbs)
+          3. Tense consistency and usage (past, present, future)
+          4. Articles (a, an, the) usage
+          5. Pronouns (I, you, he, she, it, they) and their consistency
+          6. Adjective and adverb placement
+          7. Punctuation (commas, periods, question marks)
+          8. Prepositions (in, on, at, by, with, etc.)
+          9. Sentence structure and word order
+          
           DO NOT check or correct Thai language text.
           DO NOT correct minor typos, British/American spelling variations, or stylistic choices.
-          ONLY correct actual errors that change meaning or would cause confusion.
+          ONLY correct errors that affect clarity, meaning, or grammatical correctness.
           
           Your response should follow this format:
   
-          1. If there are SIGNIFICANT errors in ENGLISH words or phrases:
+          1. If there are grammar or spelling errors in ENGLISH words or phrases:
              Return a valid JSON object with two separate parts:
              {
                "type": "message",
@@ -364,16 +690,16 @@ const ChatScreen = () => {
                "spelling_correction": {
                  "errors": [
                    {
-                     "original": "misspelled or incorrect English word/phrase exactly as written by user",
+                     "original": "incorrect English word/phrase exactly as written by user",
                      "corrected": "correct English version",
-                     "explanation": "brief explanation in Thai about why this is an error"
+                     "explanation": "Brief explanation of the error type (e.g., subject-verb agreement, wrong tense, etc.) and how to fix it."
                    }
                  ],
-                 "betterPhrase": "A better way to express the entire sentence in English (if applicable)"
+                 "betterPhrase": "A better, more natural way to express the entire sentence or idea in English (focus on natural expression)"
                }
              }
   
-          2. If there are NO SIGNIFICANT English errors or if the message uses only Thai language:
+          2. If there are NO significant English errors or if the message uses only Thai language:
              Return this simpler JSON:
              {
                "type": "message",
@@ -381,10 +707,12 @@ const ChatScreen = () => {
              }
           
           IMPORTANT: 
-          - Only flag SERIOUS errors, not minor variations or stylistic differences.
-          - Only check for errors in English words. Completely ignore any Thai text.
-          - If a message is fully in Thai, don't provide any spelling corrections at all.
-          - If unsure if something is an error, DO NOT correct it.`
+          - Be comprehensive but focus on meaningful errors, not style preferences
+          - For the "betterPhrase" field, focus on making the expression sound more natural and fluent
+          - Only check English text - completely ignore Thai characters and words
+          - If message is fully in Thai, don't provide any corrections
+          - If unsure whether something is an error, DO NOT flag it
+          - Limit to at most 3 most important errors if there are many`
         });
       }
       
@@ -393,7 +721,7 @@ const ChatScreen = () => {
       console.log(`Sending request: ${isVocabularyRequest ? 'vocabulary request' : 'normal message'}`);
 
       const response = await axios({
-        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyCBmjgmL0EmlMH18RoRc4nb8zKQKbCDucw`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyBdz8NnKNINDOdxQuzBDewubNyo5CyEUwM`,
         method: "post",
         data: {
           contents: [{
@@ -486,15 +814,80 @@ const ChatScreen = () => {
   
     // ถ้าไม่มีการแบ่ง ส่งคืนข้อความเดิม
     return messages.length ? messages : [message];
+  };  // Helper function to determine if conversation is getting too long and needs management
+  const isConversationTooLong = (history) => {
+    // Check if we have more than 20 message exchanges (40 messages total including user and AI)
+    if (history.length > 40) return true;
+    
+    // Or check if the total text content exceeds approximately 6000 characters
+    const totalLength = history.reduce((total, msg) => {
+      return total + (msg.text ? msg.text.length : 0);
+    }, 0);
+    
+    return totalLength > 6000;
   };
-
-  const sendMessage = useCallback(async () => {
+  
+  // Comprehensive conversation management to prevent context loss over long conversations
+  const manageConversationHistory = (history, maxMessages = 40) => {
+    // If conversation isn't too long, return it as is
+    if (history.length <= maxMessages) {
+      return history;
+    }
+    
+    console.log("Managing conversation history - pruning older messages while preserving context");
+    
+    // For longer conversations, we need selective pruning while preserving key context
+    
+    // 1. Keep most recent messages intact
+    const recentMessages = history.slice(-Math.floor(maxMessages * 0.75)); // Keep 75% most recent messages
+    
+    // 2. From older history, identify and keep important messages
+    const olderMessages = history.slice(0, -Math.floor(maxMessages * 0.75));
+    
+    // 3. Score messages by importance (simple heuristic: length, keywords, and questions tend to be important)
+    const scoredOlderMessages = olderMessages.map(msg => {
+      let importanceScore = 0;
+      
+      // Longer messages are probably more important
+      importanceScore += Math.min(msg.text ? msg.text.length / 20 : 0, 5);
+      
+      // Messages with question marks likely need context
+      importanceScore += msg.text && msg.text.includes('?') ? 3 : 0;
+      
+      // Messages with keywords are likely important topic starters
+      if (msg.topics && msg.topics.length > 0) {
+        importanceScore += msg.topics.length;
+      }
+      
+      return { message: msg, score: importanceScore };
+    });
+    
+    // 4. Sort by importance and select top messages to keep
+    const importantOlderMessages = scoredOlderMessages
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.floor(maxMessages * 0.25)) // Keep up to 25% of max as important older messages
+      .map(item => item.message);
+    
+    // 5. Create special marker to indicate history compression happened
+    const compressionMarker = {
+      text: `[${olderMessages.length - importantOlderMessages.length} older messages were summarized]`,
+      isUser: false,
+      isSystemMessage: true,
+      timestamp: new Date()
+    };
+    
+    // 6. Combine important older messages + marker + recent messages
+    return [...importantOlderMessages, compressionMarker, ...recentMessages];
+  };
+    const sendMessage = useCallback(async () => {
     if (!inputMessage.trim()) return;
   
     const userMessage = { 
       text: inputMessage, 
       isUser: true,
-      timestamp: new Date() 
+      timestamp: new Date(),
+      // Track conversation topics for better context retention
+      topics: extractKeywords(inputMessage)
     };
   
     setChatHistory(prev => [...prev, userMessage]);
@@ -507,6 +900,16 @@ const ChatScreen = () => {
     }, 50);
   
     try {
+      // Check if we need to manage conversation length before generating response
+      let currentChatHistory = [...chatHistory, userMessage];
+      
+      // If conversation is getting too long, manage it while preserving context
+      if (isConversationTooLong(currentChatHistory)) {
+        currentChatHistory = manageConversationHistory(currentChatHistory);
+        // Update the chat history with the managed version
+        setChatHistory(currentChatHistory);
+      }
+      
       const aiResponse = await generateResponse(inputMessage);
       
       // Debug the response we got
@@ -536,27 +939,48 @@ const ChatScreen = () => {
             type: 'message',
             content: messageChunks[i],
             isUser: false,
-            timestamp: new Date()
+            timestamp: new Date(),
+            // Track conversation topics for better context retention
+            topics: extractKeywords(messageChunks[i])
           };
           setTimeout(() => {
             setChatHistory(prev => [...prev, aiMessage]);
           }, i * 500);
         }
-        
-        // Check for spelling correction and filter to English only
+          // Check for grammar/spelling corrections and filter to English only
         if (aiResponse.spelling_correction) {
           // Filter errors to only include English words if using the errors array
           if (Array.isArray(aiResponse.spelling_correction.errors)) {
             const filteredErrors = filterEnglishErrors(aiResponse.spelling_correction.errors);
             aiResponse.spelling_correction.errors = filteredErrors;
             
-            // Only show spelling correction if we have valid errors after filtering
+            // Validate betterPhrase
+            let hasBetterPhrase = false;
+            if (aiResponse.spelling_correction.betterPhrase) {
+              // Check if betterPhrase is not empty and different from the original
+              // Find the original user message to compare
+              const userMsgText = inputMessage.trim();
+              const betterPhrase = aiResponse.spelling_correction.betterPhrase.trim();
+              
+              // Only keep betterPhrase if it's substantial and different
+              if (betterPhrase && 
+                  betterPhrase.length > 0 && 
+                  betterPhrase.toLowerCase() !== userMsgText.toLowerCase()) {
+                hasBetterPhrase = true;
+              } else {
+                // If it's not useful, remove it
+                delete aiResponse.spelling_correction.betterPhrase;
+              }
+            }
+            
+            // Only show spelling correction if we have valid errors or a useful better phrase
             const hasSpellingCorrection = filteredErrors.length > 0 || 
-              (aiResponse.spelling_correction.original && 
-               aiResponse.spelling_correction.original !== aiResponse.spelling_correction.corrected);
+                                          hasBetterPhrase ||
+                                          (aiResponse.spelling_correction.original && 
+                                           aiResponse.spelling_correction.original !== aiResponse.spelling_correction.corrected);
             
             if (hasSpellingCorrection) {
-              console.log("Adding English spelling correction:", JSON.stringify(aiResponse.spelling_correction));
+              console.log("Adding enhanced grammar/spelling correction:", JSON.stringify(aiResponse.spelling_correction));
               setTimeout(() => {
                 const spellingCorrectionMessage = {
                   type: 'spelling_correction',
@@ -594,15 +1018,33 @@ const ChatScreen = () => {
       }, 50);
     }
   }, [inputMessage, chatHistory, difficulty, chatbotRole]);
-
-  // Add this function to help filter only English errors
+  // Enhanced function to filter and prioritize English grammatical errors
   const filterEnglishErrors = (errors) => {
     if (!Array.isArray(errors) || errors.length === 0) return [];
     
     // Simple regex to detect if text contains Thai characters
     const containsThai = (text) => /[\u0E00-\u0E7F]/.test(text);
     
-    return errors.filter(error => {
+    // Assign priority scores to different types of errors
+    const getErrorPriority = (error) => {
+      // Look for key grammar terms in the explanation
+      const explanation = error.explanation?.toLowerCase() || '';
+      
+      if (explanation.includes('subject-verb agreement')) return 10;
+      if (explanation.includes('tense')) return 9;
+      if (explanation.includes('article')) return 8;
+      if (explanation.includes('pronoun')) return 7;
+      if (explanation.includes('preposition')) return 6;
+      if (explanation.includes('adjective') || explanation.includes('adverb')) return 5;
+      if (explanation.includes('punctuation')) return 4;
+      if (explanation.includes('spelling')) return 3;
+      
+      // Default priority for other errors
+      return 1;
+    };
+    
+    // Filter valid errors first
+    const validErrors = errors.filter(error => {
       // Skip if original or corrected is empty
       if (!error.original || !error.corrected) return false;
       
@@ -612,18 +1054,26 @@ const ChatScreen = () => {
       // Skip if original contains Thai characters
       if (containsThai(error.original)) return false;
       
-      // Skip minor punctuation differences
+      // Skip minor punctuation-only differences
       if (error.original.replace(/[.,!?;:]/g, '').trim().toLowerCase() === 
-          error.corrected.replace(/[.,!?;:]/g, '').trim().toLowerCase()) return false;
+          error.corrected.replace(/[.,!?;:]/g, '').trim().toLowerCase()) {
+        // Only keep punctuation errors if specifically mentioned as such
+        return error.explanation?.toLowerCase().includes('punctuation');
+      }
       
       return true;
     });
+    
+    // Sort by priority and limit to top 3 most important errors if there are many
+    return validErrors
+      .sort((a, b) => getErrorPriority(b) - getErrorPriority(a))
+      .slice(0, 3);
   };
 
   const translateWithGemini = async (text) => {
     try {
       const response = await axios({
-        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyCOqvOEwENqbjr18V4MaKP3F3peXZkeUgs`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDiFlZbksAdPa7YwrnNHql3v-1DrsNMRrc`,
         method: "post",
         data: {
           contents: [{
@@ -631,8 +1081,6 @@ const ChatScreen = () => {
               { text: `Translate this English text to Thai: "${text}"` },
               { text: `หางเสียงใช้ครับอย่างเดียว` },
               { text: "Return the translation only." },
-   
-              
             ]
           }],
         },
@@ -654,6 +1102,76 @@ const ChatScreen = () => {
       console.error("Translation error:", error);
     } finally {
       setIsTranslating(false);
+    }
+  };
+
+  const handleSpeak = async (text, messageId) => {
+    try {
+      if (isSpeaking && currentSpeakingId === messageId) {
+        // Stop speaking if it's the same message
+        Speech.stop();
+        setIsSpeaking(false);
+        setCurrentSpeakingId(null);
+        return;
+      }
+      
+      // Stop any previous speech
+      Speech.stop();
+      
+      // Start new speech
+      setIsSpeaking(true);
+      setCurrentSpeakingId(messageId);
+      
+      // Check if the text is too long
+      const maxLength = 4000;
+      const trimmedText = text.length > maxLength ? 
+        text.substring(0, maxLength) + "..." : 
+        text;
+      
+      // Try to use the Python script for TTS
+      try {
+        // First approach - try running the Python script directly via fetch
+        const response = await fetch('http://127.0.0.1:5000/speak', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: trimmedText })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Server response not ok');
+        }
+        
+        // Speech will be handled by the Python script
+        
+      } catch (pythonError) {
+        console.log("Error with Python TTS, falling back to Expo Speech:", pythonError);
+        
+        // Set options for Expo Speech (fallback)
+        const options = {
+          language: 'en-US',
+          pitch: 1.0,
+          rate: 0.9,
+          onDone: () => {
+            setIsSpeaking(false);
+            setCurrentSpeakingId(null);
+          },
+          onError: (error) => {
+            console.error('Speech error:', error);
+            setIsSpeaking(false);
+            setCurrentSpeakingId(null);
+          }
+        };
+        
+        // Use Expo Speech as fallback
+        await Speech.speak(trimmedText, options);
+      }
+      
+    } catch (error) {
+      console.error("Speech error:", error);
+      setIsSpeaking(false);
+      setCurrentSpeakingId(null);
     }
   };
 
@@ -840,31 +1358,68 @@ const ChatScreen = () => {
                 </Text>
                 
                 {!message.isUser && (
-                  <TouchableOpacity 
-                    onPress={() => handleTranslate(message.content || message.text)}
-                    style={[styles.translateButton, isTranslating && styles.translateButtonDisabled]}
-                    disabled={isTranslating}
-                  >
-                    {isTranslating ? (
-                      <LoadingDots />
-                    ) : (
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <MaterialIcons name="translate" size={16} color="white" />
-                        <Text style={[styles.translateButtonText, { marginLeft: 4 }]}>Translate</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
+                  <View style={styles.messageButtonsContainer}>
+                    {/* Sound button for AI messages */}
+                    <TouchableOpacity 
+                      onPress={() => handleSpeak(message.content || message.text, index)}
+                      style={[
+                        styles.soundButton, 
+                        isSpeaking && currentSpeakingId === index && styles.soundButtonActive
+                      ]}
+                      disabled={isTranslating}
+                    >
+                      <FontAwesome5 
+                        name={isSpeaking && currentSpeakingId === index ? "volume-up" : "volume-up"} 
+                        size={14}
+                        solid={true}
+                        color="white" 
+                      />
+                      {isSpeaking && currentSpeakingId === index && (
+                        <View style={styles.speakingIndicator}>
+                          <View style={{width: 4, height: 4, borderRadius: 2, backgroundColor: '#fff'}} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    {/* Translation button */}
+                    <TouchableOpacity 
+                      onPress={() => handleTranslate(message.content || message.text)}
+                      style={[styles.translateButton, isTranslating && styles.translateButtonDisabled]}
+                      disabled={isTranslating}
+                    >
+                      {isTranslating ? (
+                        <View style={styles.translateLoadingContainer}>
+                          <MaterialIcons name="translate" size={16} color="white" style={styles.translateIcon} />
+                          <ChatBubbleLoader />
+                        </View>
+                      ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <MaterialIcons name="translate" size={16} color="white" />
+                          <Text style={[styles.translateButtonText, { marginLeft: 4 }]}>Translate</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
             )}
           </View>
         ))}
+        
+        {/* Add the AI typing indicator when answer is being generated */}
         {generatingAnswer && (
-          <View style={styles.loadingContainer}>
-            <GridLoader />
+          <View>
+            <View style={styles.statusBar}>
+              <FontAwesome5 name="robot" size={16} color="#6C4E31" />
+              <Text style={[styles.statusText, styles.aiStatusText]}>AI Elic</Text>
+            </View>
+            <View style={[styles.message, styles.aiMessage, styles.typingMessage]}>
+              <ChatTypingIndicator />
+            </View>
           </View>
         )}
       </ScrollView>
+      
       <View style={styles.inputArea}>
         <TextInput
           value={inputMessage}
@@ -898,7 +1453,7 @@ const ChatScreen = () => {
               onPress={() => setTranslationModalVisible(false)}
               style={styles.closeButton}
             >
-              <Text style={styles.closeButtonText}>Close</Text>
+              <Text style={styles.closeButtonText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1153,13 +1708,14 @@ const styles = StyleSheet.create({
   closeButton: {
     backgroundColor: '#8D493A',
     padding: 10,
-    borderRadius: 5,
+    borderRadius: 100,
     minWidth: 100,
     alignItems: 'center',
   },
   closeButtonText: {
     color: 'white',
     fontSize: 16,
+    fontWeight: 'bold',
   },
   translateButtonDisabled: {
     opacity: 0.7,
@@ -1465,6 +2021,12 @@ const styles = StyleSheet.create({
     borderTopColor: '#F0E68C',
   },
   
+  betterPhraseOnly: {
+    marginTop: 0,
+    paddingTop: 0,
+    borderTopWidth: 0,
+  },
+  
   betterPhraseHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1483,6 +2045,79 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: 'italic',
     lineHeight: 20,
+  },
+  chatBubbleLoaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+    paddingHorizontal: 2,
+  },
+  chatBubbleDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'white',
+    margin: 2,
+  },
+  translateLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  translateIcon: {
+    marginRight: 4,
+  },
+  typingIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  typingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#8D493A',
+    margin: 3,
+  },
+  typingMessage: {
+    minWidth: 70,
+    paddingVertical: 0,
+    marginBottom: 16,
+  },
+  soundButton: {
+    backgroundColor: '#6C4E31',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 15,
+    marginRight: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 35,
+    height: 28,
+    position: 'relative',
+  },
+  soundButtonActive: {
+    backgroundColor: '#8D493A',
+  },
+  speakingIndicator: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#8D493A',
+    borderRadius: 10,
+    width: 12,
+    height: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  messageButtonsContainer: {
+    flexDirection: 'row',
+    marginTop: 5,
+    alignItems: 'center',
   },
 });
 
