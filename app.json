@@ -2,14 +2,14 @@
   "expo": {
     "name": "Elic",
     "slug": "Elic",
-    "scheme": "Elic",
+    "scheme": "elicapp",
     "owner": "mojo093",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/elic.jpg",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/eliclogo.jpeg",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -19,18 +19,11 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/elic2.jpg",
+        "foregroundImage": "./assets/elic3.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.mojo093.Elic",
-      "config": {
-        "googleSignIn": {
-          "apiKey": "AIzaSyDzP0rqE4yUZodTk2wgVxaBJpWg_AhH63k",
-          "certificateHash": "433334288159-nv8ul6n4n5n9pvr3nbbfhl7bk12fpt1d"
-        }
-      }
+      "package": "com.mojo093.Elic"
     },
-    "scheme": "com.mojo093.Elic",
     "web": {
       "favicon": "./assets/elic.jpg"
     },

@@ -130,9 +130,22 @@ const TranslationGame = () => {
     }
   };
 
+  // ฟังก์ชันตรวจสอบภาษาอังกฤษ
+  const isEnglishOnly = (text) => {
+    // อนุญาตเฉพาะ a-z, A-Z, space, punctuation, ตัวเลข
+    // ถ้ามีตัวอักษรที่ไม่ใช่ภาษาอังกฤษ return false
+    return /^[\x00-\x7F]+$/.test(text.trim());
+  };
+
   const checkTranslation = async () => {
     if (!translation.trim()) {
       showModal('ลองใหม่', 'กรุณากรอกคำแปลภาษาอังกฤษ');
+      return;
+    }
+
+    // ตรวจสอบภาษาอังกฤษ
+    if (!isEnglishOnly(translation)) {
+      showModal('คำเตือน', 'กรุณากรอกคำแปลเป็นภาษาอังกฤษเท่านั้น');
       return;
     }
 
@@ -142,7 +155,7 @@ const TranslationGame = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDiFlZbksAdPa7YwrnNHql3v-1DrsNMRrc', {
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyCzNuPgAqnZaWykSkxRAdQuyaP5cVVeUx8', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,60 +1,17 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, FlatList, SafeAreaView, StatusBar, Platform, Animated, Easing, Modal } from "react-native";
 import axios from "axios";
-import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';  // เพิ่ม FontAwesome5
+import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import Menu from './menu.js';
 import Settings from './option/Settings.js';
 import ProfileScreen from './profile.js';
+import MiniMenu from './option/MiniMenu.js';
 import { Keyboard } from 'react-native';
 import getRolePrompt from './option/getRolePrompt';
 import { CHATBOT_ROLES } from './option/Settings';
 import * as Speech from 'expo-speech';  // For fallback
+import QuickMessageOptions from '../components/QuickMessageOptions';
 
-const GridLoader = () => {
-  const [animation] = useState(new Animated.Value(0));
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.timing(animation, {
-        toValue: 1,
-        duration: 1200,
-        easing: Easing.linear,
-        useNativeDriver: true
-      })
-    ).start();
-  }, []);
-
-  const gridItems = [0, 1, 2, 3, 4, 5, 6, 7, 8]; // 3x3 grid
-
-  return (
-    <View style={styles.gridContainer}>
-      {gridItems.map((item, index) => (
-        <Animated.View
-          key={index}
-          style={[
-            styles.gridItem,
-            {
-              opacity: animation.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.5, 1, 0.5],
-                extrapolate: "clamp"
-              }),
-              transform: [
-                {
-                  scale: animation.interpolate({
-                    inputRange: [0, 0.5, 1],
-                    outputRange: [0.8, 1, 0.8],
-                    extrapolate: "clamp"
-                  })
-                }
-              ]
-            }
-          ]}
-        />
-      ))}
-    </View>
-  );
-};
 
 const ChatBubbleLoader = () => {
   const [dot1] = useState(new Animated.Value(0));
@@ -421,55 +378,21 @@ const ChatScreen = () => {
       }, 100);
     }
   }, [chatHistory]);
-  // Enhanced formatChatHistory with better context structuring
-  const formatChatHistory = (history) => {
-    // Filter out non-text messages like vocabulary and spelling corrections
-    const textHistory = history.filter(msg => msg.text);
+  // Simplified chat history formatting - keep only recent relevant messages
+  const formatChatHistory = (history, maxMessages = 10) => {
+    // Take only the most recent messages to avoid confusion
+    const recentHistory = history.slice(-maxMessages);
     
-    // Format each message with role and timestamp details
-    const formattedMessages = textHistory.map(msg => {
-      const role = msg.isUser ? 'User' : 'Elic';
-      const timestamp = msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString();
-      return `${role} [${timestamp}]: ${msg.text}`;
-    }).join('\n\n');
-    
-    return formattedMessages;
-  };
-  
-  // Add summarization for long conversations
-  const summarizeConversation = (history, maxTokenLength = 3000) => {
-    const fullHistory = formatChatHistory(history);
-    
-    // If conversation is short enough, return the full history
-    if (fullHistory.length <= maxTokenLength) {
-      return fullHistory;
-    }
-    
-    // For long conversations, keep recent messages intact and summarize older ones
-    const recentMessages = history.slice(-8); // Keep last 8 messages fully intact
-    const olderMessages = history.slice(0, -8); // These will be summarized
-    
-    // Format recent messages normally
-    const recentFormattedMessages = formatChatHistory(recentMessages);
-    
-    // Create a summary of older messages by keeping only key points
-    // For simplicity, we'll just keep the topic indicators from user messages
-    const summaryPoints = olderMessages
-      .filter(msg => msg.isUser && msg.text)
+    return recentHistory
+      .filter(msg => msg.text)
       .map(msg => {
-        // Extract the first sentence or up to 100 characters as a topic indicator
-        const topic = msg.text.split('.')[0].trim();
-        return topic.length > 100 ? topic.substring(0, 100) + '...' : topic;
+        const role = msg.isUser ? 'User' : 'Elic';
+        return `${role}: ${msg.text}`;
       })
-      .slice(-5); // Keep only the 5 most recent topics for context
-    
-    const summary = "Earlier conversation summary:\n- " + 
-      summaryPoints.join('\n- ') + 
-      `\n\n(${olderMessages.length} earlier messages summarized)\n\n`;
-      
-    return summary + "Recent conversation:\n" + recentFormattedMessages;
+      .join('\n');
   };
 
+  // Remove the complex summarization function - it was causing context confusion
   // Extract key topics from conversation history to maintain context awareness
   const extractConversationTopics = (history) => {
     if (!history || history.length < 3) return ""; // Not enough history to extract topics
@@ -506,28 +429,16 @@ const ChatScreen = () => {
     return topKeywords.length > 0 ? topKeywords.join(', ') : "";
   };
 
-  // Extract keywords from a message for topic tracking
+  // Simplified keyword extraction
   const extractKeywords = (message) => {
-    if (!message || typeof message !== 'string' || message.trim() === '') {
-      return [];
-    }
+    if (!message || typeof message !== 'string') return [];
     
-    // Common English filler words to filter out
-    const fillerWords = [
-      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
-      'with', 'about', 'is', 'are', 'was', 'were', 'have', 'has', 'had', 
-      'this', 'that', 'these', 'those', 'my', 'your', 'his', 'her', 'their', 
-      'our', 'its', 'i', 'you', 'he', 'she', 'we', 'they', 'them', 'me',
-      'as', 'of', 'be', 'by', 'so', 'if', 'do', 'can', 'will', 'would',
-      'should', 'could', 'yes', 'no', 'not', 'very', 'too', 'just', 'now'
-    ];
+    const fillerWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'about', 'is', 'are', 'was', 'were'];
     
-    // Extract words, filter out non-alphanumeric chars, and filter out short words and filler words
     return message.toLowerCase()
       .split(/\s+/)
-      .map(word => word.replace(/[^\w\s]/g, '').trim())
       .filter(word => word.length > 3 && !fillerWords.includes(word))
-      .slice(0, 5); // Take up to 5 keywords per message
+      .slice(0, 3);
   };
   // We use summarizeConversation for context building and manageConversationHistory for storage efficiency
 
@@ -539,14 +450,14 @@ const ChatScreen = () => {
         { text: "If there is an unclear or only one word, repeat what it means. and If the user writes incorrectly, please explain - Correct spelling - Wrong point - Suggestions for improvement - Please write a concise and easy -to-understand description." },
         { text: "Keep your introduction brief and friendly, maximum 2 sentences." },
         { text: "List 2-3 main areas you can help with." },
-        { text: "Ask one specific question to start the conversation." },
+        
         { text: "Maximum response length: 3-4 sentences." }
       ];
 
       const parts = !chatbotRole ? getDefaultPrompt() : trainerPrompts;
 
       const response = await axios({
-        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDiFlZbksAdPa7YwrnNHql3v-1DrsNMRrc`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyBaCvvDKrhwkAfDL3YoO4yfsz4ZhVf7oCU`,
         method: "post",
         data: {
           contents: [{
@@ -592,136 +503,79 @@ const ChatScreen = () => {
   };
   const generateResponse = async (userMessage) => {
     try {
-      // Use improved context management with summarization for long conversations
-      const conversationHistory = summarizeConversation(chatHistory);
+      // Simplified context - only use recent messages to avoid confusion
+      const recentHistory = chatHistory.slice(-8); // Only last 8 messages
+      const conversationHistory = formatChatHistory(recentHistory);
       
-      // Extract recent interactions to highlight in the prompt
-      const recentMessages = chatHistory.slice(-4);
-      const recentContext = recentMessages.length > 0 
-        ? "Most recent exchanges:\n" + formatChatHistory(recentMessages)
-        : "";
-      
-      // Check if the message is primarily in Thai
-      const thaiCharCount = (userMessage.match(/[\u0E00-\u0E7F]/g) || []).length;
-      const isMainlyThai = thaiCharCount > userMessage.length * 0.3; // If 30% or more characters are Thai
-      
-      // Expanded check for vocabulary request in both Thai and English
-      const thaiVocabPhrases = ["คำศัพท์", "วงศัพท์", "เรียนรู้คำศัพท์"];
-      const englishVocabPhrases = ["vocabulary", "vocab"];                                                     
+      // Check for vocabulary request
+      const thaiVocabPhrases = ["คำศัพท์", "วงศัพท์"];
+      const englishVocabPhrases = ["vocabulary", "vocab"];
       
       const isVocabularyRequest = 
         thaiVocabPhrases.some(phrase => userMessage.toLowerCase().includes(phrase)) ||
         englishVocabPhrases.some(phrase => userMessage.toLowerCase().includes(phrase));
       
-      // Track important conversation topics for better context retention
-      const conversationTopics = extractConversationTopics(chatHistory);
-      
-      // Enhanced prompt structure with better context management      // Enhanced context-aware prompt structure
+      // Simplified prompt structure
       const parts = [
-        // Core identity and role instructions
         { text: getRolePrompt(chatbotRole) },
-        { text: 'You are an AI English language trainer named Elic. Your goal is to help users practice and improve their English through natural conversation.' },
-        { text: 'Answer according to the personality, characteristics and scope of the given role. Use role-appropriate language, such as jargon or appropriate expressions.' },
+        { text: 'You are Elic, an English language trainer. Help users improve their English through conversation.' },
+        { text: `Difficulty level: ${difficulty}` },
         
-        // Memory management instructions
-        { text: "IMPORTANT MEMORY INSTRUCTIONS: You have perfect recall of the entire conversation history. Reference specific details from earlier in the conversation when relevant. If the user refers to something mentioned earlier, acknowledge it explicitly." },
+        // Only include recent conversation history to avoid confusion
+        { text: `Recent conversation:\n${conversationHistory}` },
         
-        // Conversation context in different formats
-        { text: "CONVERSATION HISTORY:\n" + conversationHistory },
-        { text: recentContext }, // Highlight recent context for better continuity
+        // Current user message - make this very clear
+        { text: `CURRENT USER MESSAGE (respond to this): "${userMessage}"` },
         
-        // Important context cues for better memory
-        { text: conversationTopics ? `KEY TOPICS DISCUSSED: ${conversationTopics}` : "" },
-        { text: `DIFFICULTY LEVEL: ${difficulty}` },
-        
-        // Personality and style guidance
-        { text: "Stay in character as defined by your role. Keep responses brief but meaningful." },
-        { text: "Maximum 4 sentences per response." },
-        
-        // Specific memory trigger for current exchange
-        { text: "BEFORE RESPONDING: Review the conversation history for any details, preferences, or topics the user has mentioned before that are relevant to this exchange." }
+        { text: "IMPORTANT: Respond only to the CURRENT USER MESSAGE above. Keep responses brief (max 4 sentences)." }
       ];
       
-      // Add format instructions if this is a vocabulary request
+      // Add vocabulary-specific instructions if needed
       if (isVocabularyRequest) {
         parts.push({ 
-          text: `The user is asking about vocabulary ${isMainlyThai ? "in Thai" : "in English"}. 
-          You MUST respond with VALID JSON format with this EXACT structure:
+          text: `The user wants vocabulary. Respond with JSON format:
           {
             "type": "vocabulary",
             "words": [
               {
-                "english": "word in English",
-                "thai": "คำแปลภาษาไทย",
-                "example": "example sentence in English"
+                "english": "word",
+                "thai": "คำแปล",
+                "example": "example sentence"
               }
             ]
           }
-          IMPORTANT: 
-          - Make sure your entire response is valid parseable JSON. No explanations before or after the JSON.
-          - Include 3-5 relevant vocabulary words related to: "${userMessage}"
-          - If the user's message is in Thai, focus on vocabulary words related to the Thai topic mentioned.
-          - Always write examples in English regardless of the user's input language.`
+          Include 3-5 vocabulary words related to: "${userMessage}"`
         });
-      } else {        // Enhanced instructions for comprehensive grammar correction - English only
+      } else {
+        // Simplified grammar checking
         parts.push({
-          text: `Check if the user's message has any errors in the following categories IN ENGLISH WORDS ONLY: 
-          1. Spelling mistakes
-          2. Subject-verb agreement (singular subjects need singular verbs)
-          3. Tense consistency and usage (past, present, future)
-          4. Articles (a, an, the) usage
-          5. Pronouns (I, you, he, she, it, they) and their consistency
-          6. Adjective and adverb placement
-          7. Punctuation (commas, periods, question marks)
-          8. Prepositions (in, on, at, by, with, etc.)
-          9. Sentence structure and word order
+          text: `Check only significant English grammar/spelling errors in: "${userMessage}"
           
-          DO NOT check or correct Thai language text.
-          DO NOT correct minor typos, British/American spelling variations, or stylistic choices.
-          ONLY correct errors that affect clarity, meaning, or grammatical correctness.
+          If errors found, respond with:
+          {
+            "type": "correction",
+            "message": "Your conversation response",
+            "corrections": {
+              "errors": [
+                {
+                  "original": "wrong word",
+                  "corrected": "correct word",
+                  "explanation": "brief explanation in Thai and English"
+                }
+              ]
+            }
+          }
           
-          Your response should follow this format:
-  
-          1. If there are grammar or spelling errors in ENGLISH words or phrases:
-             Return a valid JSON object with two separate parts:
-             {
-               "type": "message",
-               "content": "Your regular conversation response without mentioning the errors.",
-               "spelling_correction": {
-                 "errors": [
-                   {
-                     "original": "incorrect English word/phrase exactly as written by user",
-                     "corrected": "correct English version",
-                     "explanation": "Brief explanation of the error type (e.g., subject-verb agreement, wrong tense, etc.) and how to fix it."
-                   }
-                 ],
-                 "betterPhrase": "A better, more natural way to express the entire sentence or idea in English (focus on natural expression)"
-               }
-             }
-  
-          2. If there are NO significant English errors or if the message uses only Thai language:
-             Return this simpler JSON:
-             {
-               "type": "message",
-               "content": "Your regular conversation response."
-             }
-          
-          IMPORTANT: 
-          - Be comprehensive but focus on meaningful errors, not style preferences
-          - For the "betterPhrase" field, focus on making the expression sound more natural and fluent
-          - Only check English text - completely ignore Thai characters and words
-          - If message is fully in Thai, don't provide any corrections
-          - If unsure whether something is an error, DO NOT flag it
-          - Limit to at most 3 most important errors if there are many`
+          If no errors, respond with:
+          {
+            "type": "message",
+            "content": "Your conversation response"
+          }`
         });
       }
-      
-      parts.push({ text: `User's latest message: "${userMessage}"` });
-
-      console.log(`Sending request: ${isVocabularyRequest ? 'vocabulary request' : 'normal message'}`);
 
       const response = await axios({
-        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyBdz8NnKNINDOdxQuzBDewubNyo5CyEUwM`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyCZ4iP7-DhYHNuobEXCC4BluiDnC0_PJLI`,
         method: "post",
         data: {
           contents: [{
@@ -732,53 +586,22 @@ const ChatScreen = () => {
 
       const responseText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || "I'm having trouble right now. Let's try a different topic!";
       
-      // Try to parse as JSON, with additional cleanup for common formatting issues
+      // Simplified JSON parsing
       try {
-        // Clean the response text to handle common JSON formatting issues
         let cleanedText = responseText;
-        
-        // Remove markdown code blocks if present
         if (cleanedText.includes("```json")) {
           cleanedText = cleanedText.replace(/```json/g, "").replace(/```/g, "").trim();
         }
         
-        // Remove any non-JSON text before the opening brace or after the closing brace
-        cleanedText = cleanedText.substring(
-          cleanedText.indexOf('{'),
-          cleanedText.lastIndexOf('}') + 1
-        );
-        
-        console.log("Cleaned JSON:", cleanedText);
+        const startIndex = cleanedText.indexOf('{');
+        const endIndex = cleanedText.lastIndexOf('}') + 1;
+        if (startIndex !== -1 && endIndex > startIndex) {
+          cleanedText = cleanedText.substring(startIndex, endIndex);
+        }
         
         const parsedResponse = JSON.parse(cleanedText);
-        
-        // Debug log to check what we received
-        console.log(`Parsed response type: ${parsedResponse.type}`);
-        if (parsedResponse.type === "vocabulary") {
-          console.log(`Found ${parsedResponse.words?.length || 0} vocabulary words`);
-        }
-        
-        // If we have spelling_correction but it's empty or malformed, remove it
-        if (parsedResponse.spelling_correction) {
-          const hasValidErrors = parsedResponse.spelling_correction.errors && 
-                                Array.isArray(parsedResponse.spelling_correction.errors) && 
-                                parsedResponse.spelling_correction.errors.length > 0;
-                                
-          const hasValidLegacyFormat = parsedResponse.spelling_correction.original && 
-                                     parsedResponse.spelling_correction.corrected;
-                                     
-          if (!hasValidErrors && !hasValidLegacyFormat) {
-            console.log("Removing empty spelling correction");
-            delete parsedResponse.spelling_correction;
-          } else {
-            console.log("Valid spelling correction found:", JSON.stringify(parsedResponse.spelling_correction));
-          }
-        }
-        
         return parsedResponse;
       } catch (e) {
-        console.log("Response not in valid JSON format, returning as regular message:", e.message);
-        console.log("Original response:", responseText);
         return { type: "message", content: responseText };
       }
     } catch (error) {
@@ -900,25 +723,11 @@ const ChatScreen = () => {
     }, 50);
   
     try {
-      // Check if we need to manage conversation length before generating response
-      let currentChatHistory = [...chatHistory, userMessage];
-      
-      // If conversation is getting too long, manage it while preserving context
-      if (isConversationTooLong(currentChatHistory)) {
-        currentChatHistory = manageConversationHistory(currentChatHistory);
-        // Update the chat history with the managed version
-        setChatHistory(currentChatHistory);
-      }
-      
+      // Simplified - no complex conversation management
       const aiResponse = await generateResponse(inputMessage);
-      
-      // Debug the response we got
-      console.log(`Response type: ${aiResponse.type}`);
-      console.log("Full AI response:", JSON.stringify(aiResponse));
       
       // Handle vocabulary response
       if (aiResponse.type === 'vocabulary' && Array.isArray(aiResponse.words)) {
-        console.log("Processing vocabulary response with", aiResponse.words.length, "words");
         const aiMessage = {
           type: 'vocabulary',
           words: aiResponse.words,
@@ -927,81 +736,47 @@ const ChatScreen = () => {
         };
         setChatHistory(prev => [...prev, aiMessage]);
       } 
-      // Handle regular message response
-      else if (aiResponse.type === 'message') {
-        console.log("Processing regular message response");
-        
-        // First add the regular message
-        const messageChunks = splitLongMessage(aiResponse.content);
+      // Handle correction response
+      else if (aiResponse.type === 'correction') {
+        // Add the main message
+        const messageChunks = splitLongMessage(aiResponse.message);
         for (let i = 0; i < messageChunks.length; i++) {
           const aiMessage = {
             text: messageChunks[i],
-            type: 'message',
-            content: messageChunks[i],
             isUser: false,
-            timestamp: new Date(),
-            // Track conversation topics for better context retention
-            topics: extractKeywords(messageChunks[i])
+            timestamp: new Date()
           };
           setTimeout(() => {
             setChatHistory(prev => [...prev, aiMessage]);
           }, i * 500);
         }
-          // Check for grammar/spelling corrections and filter to English only
-        if (aiResponse.spelling_correction) {
-          // Filter errors to only include English words if using the errors array
-          if (Array.isArray(aiResponse.spelling_correction.errors)) {
-            const filteredErrors = filterEnglishErrors(aiResponse.spelling_correction.errors);
-            aiResponse.spelling_correction.errors = filteredErrors;
-            
-            // Validate betterPhrase
-            let hasBetterPhrase = false;
-            if (aiResponse.spelling_correction.betterPhrase) {
-              // Check if betterPhrase is not empty and different from the original
-              // Find the original user message to compare
-              const userMsgText = inputMessage.trim();
-              const betterPhrase = aiResponse.spelling_correction.betterPhrase.trim();
-              
-              // Only keep betterPhrase if it's substantial and different
-              if (betterPhrase && 
-                  betterPhrase.length > 0 && 
-                  betterPhrase.toLowerCase() !== userMsgText.toLowerCase()) {
-                hasBetterPhrase = true;
-              } else {
-                // If it's not useful, remove it
-                delete aiResponse.spelling_correction.betterPhrase;
-              }
-            }
-            
-            // Only show spelling correction if we have valid errors or a useful better phrase
-            const hasSpellingCorrection = filteredErrors.length > 0 || 
-                                          hasBetterPhrase ||
-                                          (aiResponse.spelling_correction.original && 
-                                           aiResponse.spelling_correction.original !== aiResponse.spelling_correction.corrected);
-            
-            if (hasSpellingCorrection) {
-              console.log("Adding enhanced grammar/spelling correction:", JSON.stringify(aiResponse.spelling_correction));
-              setTimeout(() => {
-                const spellingCorrectionMessage = {
-                  type: 'spelling_correction',
-                  correction: aiResponse.spelling_correction,
-                  isUser: false,
-                  timestamp: new Date()
-                };
-                setChatHistory(prev => [...prev, spellingCorrectionMessage]);
-              }, messageChunks.length * 500 + 300); // Add after main message with a small delay
-            }
-          }
+        
+        // Add correction if available
+        if (aiResponse.corrections) {
+          setTimeout(() => {
+            const spellingCorrectionMessage = {
+              type: 'spelling_correction',
+              correction: aiResponse.corrections,
+              isUser: false,
+              timestamp: new Date()
+            };
+            setChatHistory(prev => [...prev, spellingCorrectionMessage]);
+          }, messageChunks.length * 500 + 300);
         }
       }
-      // Fallback for unexpected response format
+      // Handle regular message
       else {
-        console.log("Fallback: Unknown response format");
-        setChatHistory(prev => [...prev, {
-          text: typeof aiResponse === 'string' ? aiResponse : JSON.stringify(aiResponse),
-          isUser: false,
-          timestamp: new Date()
-        }]);
+        const messageChunks = splitLongMessage(aiResponse.content || aiResponse.message || JSON.stringify(aiResponse));
+        for (let i = 0; i < messageChunks.length; i++) {
+          const aiMessage = {
+            text: messageChunks[i],
+            isUser: false,
+            timestamp: new Date()
+          };
+          setTimeout(() => {
+            setChatHistory(prev => [...prev, aiMessage]);
+          }, i * 500);
+        }
       }
     } catch (error) {
       console.error("Error in sendMessage:", error);
@@ -1073,13 +848,17 @@ const ChatScreen = () => {
   const translateWithGemini = async (text) => {
     try {
       const response = await axios({
-        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDiFlZbksAdPa7YwrnNHql3v-1DrsNMRrc`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAv69JuZQ1KPR2Gr_VGhIg-vSkYNdbFJ0Y`,
         method: "post",
         data: {
           contents: [{
             parts: [
               { text: `Translate this English text to Thai: "${text}"` },
               { text: `หางเสียงใช้ครับอย่างเดียว` },
+              { text: "Translate this English text to Thai, keeping the meaning and context intact." },
+              { text: "Use natural, fluent Thai language." },
+              { text: "Do not include any additional explanations or comments." },
+              { text: "Return only the translated text without any extra formatting." },
               { text: "Return the translation only." },
             ]
           }],
@@ -1225,14 +1004,27 @@ const ChatScreen = () => {
             )}
           </View>
           {currentScreen === 'chat' && (
-            <TouchableOpacity 
-              onPress={() => setCurrentScreen('settings')} 
-              style={styles.settingsButton}
-            >
-              <View style={styles.settingsIconContainer}>
-                <Ionicons name="settings-outline" size={22} color="white" />
-              </View>
-            </TouchableOpacity>
+            <View style={styles.headerButtons}>
+              {/* Reset Chat Button */}
+              <TouchableOpacity 
+                onPress={resetChat} 
+                style={styles.resetButton}
+              >
+                <View style={styles.resetIconContainer}>
+                  <MaterialIcons name="refresh" size={20} color="white" />
+                </View>
+              </TouchableOpacity>
+              
+              {/* Settings Button */}
+              <TouchableOpacity 
+                onPress={() => setCurrentScreen('settings')} 
+                style={styles.settingsButton}
+              >
+                <View style={styles.settingsIconContainer}>
+                  <Ionicons name="settings-outline" size={22} color="white" />
+                </View>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       );
@@ -1420,6 +1212,18 @@ const ChatScreen = () => {
         )}
       </ScrollView>
       
+      {/* Add QuickMessageOptions component here, before the input area */}
+      {chatHistory.length < 2 && (
+        <QuickMessageOptions 
+          role={chatbotRole} 
+          onSelectMessage={(message) => {
+            setInputMessage(message);
+            // Optional: auto-send the message
+            // setTimeout(() => sendMessage(), 100);
+          }} 
+        />
+      )}
+      
       <View style={styles.inputArea}>
         <TextInput
           value={inputMessage}
@@ -1474,14 +1278,16 @@ const ChatScreen = () => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#AF8F6F" />
-      <View style={styles.footer}>
-        {renderCurrentScreen()}
-      </View>
-      {!isKeyboardVisible && (
-        <View style={styles.chatContainer}>
-          {renderMiniMenu()}
-        </View>
-      )}
+      <MiniMenu 
+        currentScreen={currentScreen}
+        setCurrentScreen={setCurrentScreen}
+        isKeyboardVisible={isKeyboardVisible}
+        renderChatScreen={renderChatScreen}
+        difficulty={difficulty}
+        chatbotRole={chatbotRole}
+        handleSettingsChange={handleSettingsChange}
+        resetChat={resetChat}
+      />
     </SafeAreaView>
   );
 }
@@ -1491,14 +1297,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#8D493A',
     paddingTop: Platform.OS === 'android' ? 0 : StatusBar.currentHeight,
-  },
-  chatContainer: {
-    flex: 0.1,
-    backgroundColor: '#F8EDE3',
-  },
-  footer: {
-    flex: 1,
-    backgroundColor: '#F8EDE3',
   },
   miniMenuContent: {
     flexGrow: 1,
@@ -1615,6 +1413,29 @@ const styles = StyleSheet.create({
     borderColor: '#8D493A',
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  resetButton: {
+    padding: 8,
+    alignSelf: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  resetIconContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 20,
+    padding: 8,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   settingsButton: {
     padding: 8,

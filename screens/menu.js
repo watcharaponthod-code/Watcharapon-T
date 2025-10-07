@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
     color: '#8D493A',
   },
   cardContainer: {
-    marginBottom: 25,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
   },
   gameCard: {
     borderRadius: 25,
-    padding: 25,
+    padding: 15,
     flexDirection: 'row',
     alignItems: 'center',
     width: cardWidth,
@@ -530,12 +530,23 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.1)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FFFFFF',
+    paddingBottom: 5,
+    maxWidth: '80%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
   gameDescription: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#FFFFFF',
     opacity: 0.9,
     lineHeight: 22,
+    
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
   headerLeftButton: {
     marginLeft: 15,
